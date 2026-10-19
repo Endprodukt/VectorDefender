@@ -1,0 +1,90 @@
+# Labels of the original the vector side needs, as constants in
+# src/gen/defender_syms.hpp (namespace df::sym). <listing> <label>
+# Names from other listings than "main" get the listing as prefix
+# (BLK71_STBL, ROMS_CHRTBL).
+
+# picture descriptors (defb6)
+main SCZP1
+main ASXP1
+main SWXP1
+main NULOB
+main PRBP1
+main ASTP1
+main ASTP2
+main ASTP3
+main ASTP4
+main TIEP1
+main TIEP2
+main TIEP3
+main TIEP4
+main BXPIC
+main BMBP1
+main BMBP2
+main LASP1
+main SWPIC1
+main LNDP1
+main LNDP2
+main LNDP3
+main UFOP1
+main UFOP2
+main UFOP3
+main PLAPIC
+main PLBPIC
+main PLAMIN
+main SBPIC
+main C25P1
+main C5P1
+main TEREX
+
+# RAM
+main STATUS
+main PCRAM
+main BGL
+main OPTR
+main SMAP
+
+# terrain: the screen address of each column's piece (blk71)
+blk71 STBL
+
+# the character descriptors (mess0, bank 2)
+roms CHRTBL
+
+# the general picture writer (hooked; the scene tells it from the object writers)
+main CWRIT
+
+# the ship's new direction (positive: facing right), for STICK STEERS
+main NPLAD
+# credits (BCD), for the start lamps
+main CREDIT
+
+# the whole "DEFENDER" logo's descriptor in RAM (attract mode)
+main DEFDSC
+
+# the game's start after the power-on tests (SKIP POWER-ON TEST)
+main SINIT
+
+# explosions and appears: RAM blocks of RAMSIZ bytes up to RAMEND (samexap7)
+main RAMALS
+main RAMSIZ
+main RAMEND
+# the Williams logo's pen path (amode1, bank 1)
+main LGOTAB
+# the player explosion's pieces (blk71)
+blk71 TABLE
+blk71 PNBITS
+
+# the game's settings in CMOS (C400 + n, a nibble each), for GAME SETTINGS
+main CMOS
+main SLOT1
+main CRHSTD
+main CMOSCK
+main REPLAY
+main NSHIP
+main COINSL
+main SLOT1M
+main FREEPL
+main GA1
+# their factory values and the coinage table (romc8, bank 3)
+roms DEFALT
+roms DEFSIZ
+roms CSELCT

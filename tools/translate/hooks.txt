@@ -1,0 +1,19 @@
+# The original's routines the vector side watches (asm2cpp.py puts a call to
+# Machine::hook before their first instruction). <listing> <label>
+#
+# Picture writers: Y = picture descriptor, D = screen address (A = column of
+# two pixels, B = line), carry = odd phase (one pixel to the right).
+main ON28
+main ON48
+main ON58
+main ON34
+main ON23
+main ON64
+main ON86
+main ON66
+main ON56
+# The general writer (text, digits, icons): Y = descriptor, D = address.
+main CWRIT
+
+# The game starts (after the power-on tests): SKIP POWER-ON TEST waits for it.
+main SINIT
