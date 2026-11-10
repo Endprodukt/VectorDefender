@@ -88,3 +88,10 @@ main GA1
 roms DEFALT
 roms DEFSIZ
 roms CSELCT
+
+# sub-pixel positions: the object list's area, the ship's 16-bit position
+main OLIST
+main OLEND
+main PLAX16
+main PLAY16
+blk71 BGOUT

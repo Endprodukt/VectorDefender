@@ -68,5 +68,10 @@ constexpr uint16_t GA1 = 0xC497;
 constexpr uint16_t ROMS_DEFALT = 0xCECF;
 constexpr uint16_t ROMS_DEFSIZ = 0x0047;
 constexpr uint16_t ROMS_CSELCT = 0xCF16;
+constexpr uint16_t OLIST = 0xA23C;
+constexpr uint16_t OLEND = 0xAAC5;
+constexpr uint16_t PLAX16 = 0xA0C3;
+constexpr uint16_t PLAY16 = 0xA0C5;
+constexpr uint16_t BLK71_BGOUT = 0xC092;
 
 } // namespace df::sym

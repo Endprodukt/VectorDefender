@@ -293,56 +293,6 @@ Design swarmerBurst()
     return d;
 }
 
-// --- the title -----------------------------------------------------------------
-
-// The "DEFENDER" logo of the attract mode (built in RAM, DEFDSC): slanted
-// block letters, the face in its main colour, the depth below in the
-// second. Letters upright in a 10 x 14 box, narrowed to 0.9, slanted (0.8
-// of a pixel left a line down) and set 12.5 apart.
-Design logo()
-{
-    using P = std::vector<DPoint>;
-    const P D{{0, 0}, {8, 0}, {10, 2}, {10, 12}, {8, 14}, {0, 14}, {0, 0}};
-    const P Dh{{3, 3}, {7, 3}, {7, 11}, {3, 11}, {3, 3}};
-    const P E{{0, 0}, {10, 0}, {10, 3}, {3, 3}, {3, 5.5f}, {8, 5.5f}, {8, 8.5f}, {3, 8.5f}, {3, 11}, {10, 11}, {10, 14}, {0, 14}, {0, 0}};
-    const P F{{0, 0}, {10, 0}, {10, 3}, {3, 3}, {3, 5.5f}, {8, 5.5f}, {8, 8.5f}, {3, 8.5f}, {3, 14}, {0, 14}, {0, 0}};
-    const P N{{0, 0}, {3, 0}, {7, 8}, {7, 0}, {10, 0}, {10, 14}, {7, 14}, {3, 6}, {3, 14}, {0, 14}, {0, 0}};
-    const P R{{0, 0}, {10, 0}, {10, 7}, {7.5f, 8.5f}, {10, 14}, {6.8f, 14}, {4.5f, 8.5f}, {3, 8.5f}, {3, 14}, {0, 14}, {0, 0}};
-    const P Rh{{3, 3}, {7, 3}, {7, 5.5f}, {3, 5.5f}, {3, 3}};
-    const std::vector<std::vector<P>> letters{{D, Dh}, {E}, {F}, {E}, {N}, {D, Dh}, {E}, {R, Rh}};
-    constexpr float PITCH = 12.5f, SLANT = 0.8f, DEPTH = 6.f, WIDE = 0.9f;
-    Design d;
-    auto place = [&](const P& in, float x0, float dx, float dy)
-    {
-        P out;
-        for(const DPoint& p : in) out.push_back({x0 + p.x * WIDE + (14.f - p.y) * SLANT + dx, p.y + dy});
-        return out;
-    };
-    for(size_t i = 0; i < letters.size(); ++i)
-    {
-        const float x0 = static_cast<float>(i) * PITCH;
-        // the depth: below each bottom edge of the letter a band, lower and
-        // further left, its ends joined to the edge
-        const P& outer = letters[i][0];
-        for(size_t k = 0; k + 1 < outer.size(); ++k)
-        {
-            const DPoint a = outer[k], b = outer[k + 1];
-            if(a.y < 14.f || b.y < 14.f) continue;
-            const P band{place(P{a}, x0, 0, 0)[0], place(P{a}, x0, -DEPTH * SLANT, DEPTH)[0],
-                         place(P{b}, x0, -DEPTH * SLANT, DEPTH)[0], place(P{b}, x0, 0, 0)[0]};
-            d.strokes.push_back(DStroke{RANK + 1, band});
-        }
-        for(const P& shape : letters[i]) d.strokes.push_back(DStroke{RANK + 0, place(shape, x0, 0, 0)});
-    }
-    d.fitW = 7.f * PITCH + 10.f * WIDE + 14.f * SLANT;
-    d.fitH = 14.f + DEPTH;
-    // the depth reaches left of the first letter: shift all right by it
-    for(DStroke& s : d.strokes)
-        for(DPoint& p : s.pts) p.x += DEPTH * SLANT;
-    d.fitW += DEPTH * SLANT;
-    return d;
-}
-
 // --- the font -------------------------------------------------------------------
 
 // The original's letters stand in a 5 x 7 field (pixels 1..5, rows 0..6),
@@ -447,7 +397,7 @@ struct Table
         byDesc[ASXP1] = humanoidBurst();
         byDesc[SWXP1] = swarmerBurst();
         byDesc[NULOB] = Design{};
-        byDesc[DEFDSC] = logo();
+        byDesc[DEFDSC] = defenderLogo();
         font = makeFont();
     }
 };

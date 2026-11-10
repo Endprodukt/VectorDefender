@@ -136,6 +136,7 @@ void vp3d_view_init(vp3d_view *v, float fov_deg)
     v->aspect = 4.0f / 3.0f;
     v->fog_start = v->fog_end = 0.0f;
     v->fog_floor = 0.0f;
+    v->far_cut = 0;
 }
 
 int vp3d_look_at(vp3d_view *v, vp_vec3 eye, vp_vec3 target, vp_vec3 up)
@@ -227,6 +228,12 @@ void drawCameraSegment(vp_dvg *d, const vp3d_view *v, const Lens &l, vp_vec3 a, 
     // Cut at the near plane.
     if (a.z < n) { float t = (n - a.z) / (b.z - a.z); a = vp_v3_add(a, vp_v3_scale(vp_v3_sub(b, a), t)); a.z = n; }
     if (b.z < n) { float t = (n - b.z) / (a.z - b.z); b = vp_v3_add(b, vp_v3_scale(vp_v3_sub(a, b), t)); b.z = n; }
+    // ... and at the far plane, for a view that asks for it (far_cut).
+    if (v->far_cut) {
+        const float f = v->far_z;
+        if (a.z > f) { float t = (a.z - f) / (a.z - b.z); a = vp_v3_add(a, vp_v3_scale(vp_v3_sub(b, a), t)); a.z = f; }
+        if (b.z > f) { float t = (b.z - f) / (b.z - a.z); b = vp_v3_add(b, vp_v3_scale(vp_v3_sub(a, b), t)); b.z = f; }
+    }
 
     // Fog: a line whose ends differ in brightness is drawn in steps (about a
     // twelfth of full brightness each), so a long line fades along its length.
@@ -302,6 +309,23 @@ int vp3d_mesh_face(vp3d_mesh *m, const int *idx, int count)
         if (idx[i] < 0 || idx[i] >= (int)m->verts.size())
             return vp_fail(VP_ERR_INVALID, "vp3d_mesh_face: vertex %d does not exist", idx[i]);
     m->faces.push_back(std::vector<int>(idx, idx + count));
+    m->faceColor.push_back(-1);
+    m->faceMaterial.push_back(-1);
+    return VP_OK;
+}
+
+const char *vp3d_mesh_face_material(const vp3d_mesh *m, int face)
+{
+    if (!m || face < 0 || face >= (int)m->faces.size() || m->faceMaterial[face] < 0) return nullptr;
+    return m->materials[m->faceMaterial[face]].c_str();
+}
+
+int vp3d_mesh_face_color(vp3d_mesh *m, int face, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (!m || face < 0 || face >= (int)m->faces.size())
+        return vp_fail(VP_ERR_INVALID, "vp3d_mesh_face_color: face %d does not exist", face);
+    m->faceColor[face] = (int32_t)r << 16 | (int32_t)g << 8 | b;
+    m->hasColors = true;
     return VP_OK;
 }
 
@@ -375,7 +399,9 @@ void vp3d_update_creases(vp3d_mesh *m)
     m->edgeCrease.assign(m->edges.size(), 0);
     for (size_t e = 0; e < m->edges.size(); e++) {
         int f0 = m->edgeFace0[e], f1 = m->edgeFace1[e];
-        if (f0 < 0 || f1 < 0 || m->edgeMany[e]) { m->edgeCrease[e] = 1; continue; }
+        // 0 degrees: every edge, also between faces in one plane (the
+        // pieces of a flat ring).
+        if (f0 < 0 || f1 < 0 || m->edgeMany[e] || m->creaseDeg <= 0.0f) { m->edgeCrease[e] = 1; continue; }
         // Faces meeting at a sharper angle than the crease angle keep the edge.
         m->edgeCrease[e] = vp_v3_dot(m->faceNormal[f0], m->faceNormal[f1]) < c;
     }
@@ -560,10 +586,11 @@ void vp3d_draw_mesh(vp_dvg *d, const vp3d_view *v, const vp3d_mesh *m, const vp_
 
     const std::vector<std::vector<int>> *strokes = &m->strokes;
     static thread_local std::vector<std::vector<int>> visibleStrokes;
-    if (mode == VP3D_SOLID && !m->faces.empty()) {
-        static thread_local std::vector<char> seen;
-        static thread_local std::vector<int> show;
+    static thread_local std::vector<char> seen;
+    static thread_local std::vector<int> show;
+    if ((mode == VP3D_SOLID || m->textured) && !m->faces.empty())
         vp3d_visible(m, toCam, mode, seen, show);
+    if (mode == VP3D_SOLID && !m->faces.empty()) {
         vp3d_build_strokes((int)m->verts.size(), m->edges, show, visibleStrokes);
         strokes = &visibleStrokes;
     }
@@ -572,8 +599,33 @@ void vp3d_draw_mesh(vp_dvg *d, const vp3d_view *v, const vp3d_mesh *m, const vp_
     vp_get_color(d, &r, &g, &bl);
     Lens l = lensOf(v);
     for (const std::vector<int> &s : *strokes)
-        for (size_t i = 1; i < s.size(); i++)
-            drawCameraSegment(d, v, l, cam[s[i - 1]], cam[s[i]], r, g, bl);
+        for (size_t i = 1; i < s.size(); i++) {
+            int32_t c = -1;
+            if (m->hasColors) {
+                auto it = m->edgeLookup.find(vp3d_edge_key(s[i - 1], s[i]));
+                c = vp3d_edge_color(m, it == m->edgeLookup.end() ? -1 : it->second);
+            }
+            if (c < 0) drawCameraSegment(d, v, l, cam[s[i - 1]], cam[s[i]], r, g, bl);
+            else       drawCameraSegment(d, v, l, cam[s[i - 1]], cam[s[i]], c >> 16 & 0xff, c >> 8 & 0xff, c & 0xff);
+        }
+    // Its textures, on the faces seen (all of them in wireframe).
+    if (m->textured) {
+        struct Emit { vp_dvg *d; const vp3d_view *v; Lens l; uint8_t r, g, bl; } e = { d, v, l, r, g, bl };
+        for (size_t f = 0; f < m->faces.size(); f++) {
+            if (f >= m->faceTexture.size() || !m->faceTexture[f]) continue;
+            if (mode == VP3D_SOLID && !seen[f]) continue;
+            int32_t fc = m->faceColor[f];
+            e.r = fc < 0 ? r : (uint8_t)(fc >> 16 & 0xff);
+            e.g = fc < 0 ? g : (uint8_t)(fc >> 8 & 0xff);
+            e.bl = fc < 0 ? bl : (uint8_t)(fc & 0xff);
+            vp3d_texture_segments(m, (int)f, place, cam.data(),
+                [](void *user, vp_vec3 a, vp_vec3 b, int32_t rgb, float dim) {
+                    Emit &e = *(Emit *)user;
+                    if (rgb >= 0) drawCameraSegment(e.d, e.v, e.l, a, b, rgb >> 16 & 0xff, rgb >> 8 & 0xff, rgb & 0xff);
+                    else drawCameraSegment(e.d, e.v, e.l, a, b, (uint8_t)(e.r * dim), (uint8_t)(e.g * dim), (uint8_t)(e.bl * dim));
+                }, &e);
+        }
+    }
     vp_color(d, r, g, bl);
 }
 

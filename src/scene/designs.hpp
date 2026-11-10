@@ -20,6 +20,9 @@ struct DPoint
 // A stroke's colour: a colour index of the original, or RANK + k: the k-th
 // most used colour of the original picture (for pictures built at run time).
 constexpr uint8_t RANK = 0x80;
+// Or FIXED + k: a colour of its own, not the game's (k 0 the marquee's
+// yellow, 1 its red), for the title logo drawn after the cabinet's marquee.
+constexpr uint8_t FIXED = 0x40;
 
 struct DStroke
 {
@@ -42,5 +45,11 @@ const Design* designFor(uint16_t descriptor);
 // in the same box the original's has (its width in pixels varies: 2, 4, 6
 // or 8). The strokes' colour is the original's: index 1.
 const Design* glyph(int index);
+
+// The title's logos (logos.cpp): DEFENDER, upright block letters with
+// depth, as on the cabinet's marquee (FIXED colours); Williams, the script as one smooth
+// pen line, in the order it is written.
+Design defenderLogo();
+const Design& williamsLogo();
 
 } // namespace df

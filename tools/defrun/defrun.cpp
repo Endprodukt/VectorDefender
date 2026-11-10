@@ -125,11 +125,11 @@ void dumpBoard(const std::vector<BoardLine>& lines, const std::string& path)
     std::fclose(f);
 }
 
-// The menu's marquee (package/marquee.png): "VECTOR" in the game's letters
-// over the vector DEFENDER logo, glowing lines on black, 1920 x 600.
-void marquee(const std::string& path)
+// The title's logos as designed (logos.cpp), big: Williams over DEFENDER,
+// glowing lines on black, 1920 x 900 - to look at them while drawing them.
+void logos(const std::string& path)
 {
-    constexpr int IW = 1920, IH = 600;
+    constexpr int IW = 1920, IH = 900;
     std::vector<float> img(static_cast<size_t>(IW * IH * 3), 0.f);
     auto line = [&](float x0, float y0, float x1, float y1, const float c[3], float width)
     {
@@ -156,26 +156,23 @@ void marquee(const std::string& path)
     {
         for(const df::DStroke& s : d.strokes)
         {
-            const float* c = cols[(s.color & df::RANK) ? (s.color & 1) : 0];
+            const float* c = cols[(s.color & (df::RANK | df::FIXED)) ? (s.color & 1) : 0];
             for(size_t i = 1; i < s.pts.size(); ++i)
                 line(ox + s.pts[i - 1].x * scale, oy + s.pts[i - 1].y * scale, ox + s.pts[i].x * scale,
                      oy + s.pts[i].y * scale, c, 2.2f);
         }
     };
-    static const float blue[3] = {90, 130, 255}, red[3] = {255, 40, 30}, yellow[3] = {255, 230, 40};
-    const float* logoCols[2] = {blue, red};
-    const float* textCols[2] = {yellow, yellow};
-    const df::Design* logo = df::designFor(0xB300);   // DEFDSC
-    if(logo)
+    static const float yellow[3] = {255, 225, 0}, red[3] = {225, 20, 10};
+    const float* logoCols[2] = {yellow, red};
+    const float* redCols[2] = {red, red};
+    const df::Design& w = df::williamsLogo();
+    const float ws = 1500.f / w.fitW;
+    design(w, (IW - w.fitW * ws) / 2.f, 40.f, ws, redCols);
+    if(const df::Design* logo = df::designFor(0xB300))   // DEFDSC
     {
-        const float scale = 1500.f / logo->fitW;
-        design(*logo, (IW - logo->fitW * scale) / 2.f, 230.f, scale, logoCols);
+        const float scale = 1600.f / logo->fitW;
+        design(*logo, (IW - logo->fitW * scale) / 2.f, 440.f, scale, logoCols);
     }
-    // "VECTOR": character table indices of V E C T O R, 6 pixels apart
-    const int word[6] = {40, 23, 21, 38, 33, 36};
-    const float gs = 18.f, gx0 = (IW - 6 * 8.f * gs) / 2.f;
-    for(int i = 0; i < 6; ++i)
-        if(const df::Design* g = df::glyph(word[i])) design(*g, gx0 + i * 8.f * gs, 40.f, gs, textCols);
     FILE* f = std::fopen(path.c_str(), "wb");
     if(!f) return;
     std::fprintf(f, "P6\n%d %d\n255\n", IW, IH);
@@ -210,9 +207,9 @@ void writeWav(const std::string& path, const std::vector<float>& s)
 
 int main(int argc, char** argv)
 {
-    if(argc == 3 && !std::strcmp(argv[1], "--marquee"))
+    if(argc == 3 && !std::strcmp(argv[1], "--logos"))
     {
-        marquee(argv[2]);
+        logos(argv[2]);
         return 0;
     }
     if(argc < 2)
@@ -227,6 +224,8 @@ int main(int argc, char** argv)
     bool trace = false;
     std::string wav;
     int view = 0;
+    int watch = -1;
+    long jitterFrom = -1;
     std::vector<float> sound;
     for(int i = 2; i < argc; ++i)
     {
@@ -247,6 +246,8 @@ int main(int argc, char** argv)
         else if(!std::strcmp(argv[i], "--trace")) trace = true;
         else if(!std::strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
         else if(!std::strcmp(argv[i], "--view") && i + 1 < argc) view = std::atoi(argv[++i]);
+        else if(!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = static_cast<int>(std::strtol(argv[++i], nullptr, 16));
+        else if(!std::strcmp(argv[i], "--jitter") && i + 1 < argc) jitterFrom = std::atol(argv[++i]);
         else if(!std::strcmp(argv[i], "--press") && i + 1 < argc)
         {
             Press p{};
@@ -272,6 +273,49 @@ int main(int argc, char** argv)
                 *port |= static_cast<uint8_t>(p.mask);
             }
         board.frame(in, wav.empty() ? 0 : 735);
+        if(jitterFrom >= 0 && f >= jitterFrom)
+        {
+            // --jitter from: how unevenly things move, from that frame on: per
+            // object the change of its step from one picture to the next
+            // (0 for an even move), at the true position and rounded down to
+            // the pixel as the original draws
+            struct Seen { uint16_t desc; float x, y, dx, rx, rdx; };
+            static std::vector<Seen> before;
+            static double sumTrue = 0, sumRound = 0;
+            static long count = 0;
+            std::vector<Seen> now;
+            scene.build(board, lines);
+            for(const df::SpriteObj& o : scene.objects())
+            {
+                Seen s{o.desc, o.x, o.y, 0, std::floor(o.x), 0};
+                for(const Seen& p : before)
+                    if(p.desc == o.desc && std::fabs(p.x - o.x) < 6 && std::fabs(p.y - o.y) < 6)
+                    {
+                        s.dx = o.x - p.x;
+                        s.rdx = s.rx - p.rx;
+                        if(p.dx != 0 && std::fabs(s.dx) > 0.2f)
+                        {
+                            sumTrue += std::fabs(s.dx - p.dx);
+                            sumRound += std::fabs(s.rdx - p.rdx);
+                            ++count;
+                        }
+                        break;
+                    }
+                now.push_back(s);
+            }
+            before.swap(now);
+            if(f == frames - 1 && count)
+                std::fprintf(stderr, "jitter over %ld steps: true positions %.3f px, whole pixels %.3f px\n", count,
+                             sumTrue / count, sumRound / count);
+        }
+        if(watch >= 0)
+        {
+            // --watch addr: the byte there (hex), whenever it changes
+            static int last = -1;
+            const int v = board.m.peek(static_cast<uint16_t>(watch));
+            if(v != last) std::fprintf(stderr, "f=%ld %04X=%02X in0=%02X\n", f, watch, v, in.in0);
+            last = v;
+        }
         sound.insert(sound.end(), board.audio.begin(), board.audio.end());
         if(board.m.broken)
         {
@@ -307,6 +351,18 @@ int main(int argc, char** argv)
             scene.build(board, lines);
             dumpVectors(lines, out + "/v" + std::to_string(f) + ".ppm");
             const df::SceneStats& s = scene.stats();
+            // the same picture twice, its boxes overlapping: a ghost
+            const auto& ob = scene.objects();
+            int doubles = 0;
+            for(size_t i = 0; i < ob.size(); ++i)
+                for(size_t j = i + 1; j < ob.size(); ++j)
+                    if(ob[i].desc == ob[j].desc && ob[i].x < ob[j].x + ob[j].w && ob[j].x < ob[i].x + ob[i].w &&
+                       ob[i].y < ob[j].y + ob[j].h && ob[j].y < ob[i].y + ob[i].h)
+                    {
+                        ++doubles;
+                        std::fprintf(stderr, "  double %04X at %.0f,%.0f and %.0f,%.0f\n", ob[i].desc, ob[i].x, ob[i].y, ob[j].x, ob[j].y);
+                    }
+            std::fprintf(stderr, "frame %ld: %d overlapping doubles\n", f, doubles);
             std::fprintf(stderr, "frame %ld: %zu lines, pictures %d (designed %d, letters %d), terrain %d, rest %d runs %d dots\n",
                          f, lines.size(), s.pictures, s.designed, s.glyphs, s.terrainPoints, s.restRuns, s.restDots);
         }

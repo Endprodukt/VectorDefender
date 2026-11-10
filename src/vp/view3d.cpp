@@ -350,7 +350,10 @@ void View3D::draw(vp_dvg* d, const df::Board& b, const std::vector<df::Line>& li
     view.far_z = 5000.f;
     const float halfW = (VIS_X1 - VIS_X0) / 2.f * (4.f / 3.f) / ((VIS_X1 - VIS_X0) / (VIS_Y1 - VIS_Y0));
     const float dist = halfW / std::tan(FOV / 2.f * PI / 180.f) / size;
-    float yaw = -0.28f, pitch = 0.22f;
+    // 3D ENEMIES: straight on (it then shows the field exactly as the
+    // classic view), only the enemies and humanoids as models
+    const bool enemiesOnly = s.view == 3;
+    float yaw = enemiesOnly ? 0.f : -0.28f, pitch = enemiesOnly ? 0.f : 0.22f;
     if(s.view == 2)
     {
         // 3D DYNAMIC: the camera turns the way the ship flies, the more the
@@ -376,7 +379,7 @@ void View3D::draw(vp_dvg* d, const df::Board& b, const std::vector<df::Line>& li
         yaw = camYaw_;
         pitch = camPitch_;
     }
-    const vp_vec3 target = vp_v3(0.f, -(144.f - CY), 0.f);
+    const vp_vec3 target = vp_v3(0.f, enemiesOnly ? 0.f : -(144.f - CY), 0.f);
     const vp_vec3 eye = vp_v3(target.x + dist * std::sin(yaw) * std::cos(pitch), target.y + dist * std::sin(pitch),
                               target.z - dist * std::cos(yaw) * std::cos(pitch));
     vp3d_look_at(&view, eye, target, vp_v3(0, 1, 0));
@@ -385,6 +388,13 @@ void View3D::draw(vp_dvg* d, const df::Board& b, const std::vector<df::Line>& li
 
     uint8_t pal[16][3];
     for(int i = 0; i < 16; ++i) df::Board::color(b.m.palette[i], pal[i][0], pal[i][1], pal[i][2]);
+
+    // a sprite drawn as a model: with 3D ENEMIES not the ship
+    auto modelFor = [&](uint16_t desc)
+    {
+        if(enemiesOnly && (desc == df::sym::PLAPIC || desc == df::sym::PLBPIC)) return false;
+        return models_.count(desc) != 0;
+    };
 
     // 1. the flat top row
     int lastX = -1, lastY = -1;
@@ -441,9 +451,9 @@ void View3D::draw(vp_dvg* d, const df::Board& b, const std::vector<df::Line>& li
         {
             const df::Line& l = lines[i];
             if(std::max(l.y0, l.y1) < HUD_Y) continue;
-            if(l.obj >= 0 && models_.count(objs[static_cast<size_t>(l.obj)].desc)) continue;   // a model takes its place
+            if(l.obj >= 0 && modelFor(objs[static_cast<size_t>(l.obj)].desc)) continue;   // a model takes its place
             const df::Part p = parts[i];
-            if(pass > 0 && p != df::Part::Terrain) continue;
+            if(pass > 0 && (p != df::Part::Terrain || enemiesOnly)) continue;   // the band: not with 3D ENEMIES
             const int pct = pass == 0 ? percent(p) : percent(p) * 45 / 100;
             const uint8_t r = scaled(l.r, pct), g = scaled(l.g, pct), bl = scaled(l.b, pct);
             if(pass == 0) stroke(world(l.x0, l.y0, 0.f), world(l.x1, l.y1, 0.f), r, g, bl);
@@ -455,9 +465,8 @@ void View3D::draw(vp_dvg* d, const df::Board& b, const std::vector<df::Line>& li
     // 3. the models
     for(const df::SpriteObj& o : objs)
     {
-        const auto it = models_.find(o.desc);
-        if(it == models_.end()) continue;
-        const Model& md = it->second;
+        if(!modelFor(o.desc)) continue;
+        const Model& md = models_.find(o.desc)->second;
         const float cx = o.x + o.w / 2.f, cy = o.y + o.h / 2.f;
         if(cy < HUD_Y) continue;   // the small ships and bombs of the score row stay flat
         vp_xf turn = vp_xf_identity();

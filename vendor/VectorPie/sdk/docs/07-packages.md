@@ -34,10 +34,27 @@ description  = ...             ; optional: one line, shown by the menu's GAMES p
 marquee      = marquee.png     ; optional (marquee.<screen height>.png too)
 hiscores     = yes             ; yes = save/highscores.txt (vp_hiscore), shown in
                                ; the menu's hint bar; or a relative path; or no
+kind         = game            ; optional: game (the default), or screensaver
+
+[dvg]                          ; optional: settings for the USB-DVG
+frame_hz     = 30              ; frames a second on it
+[beamforge]                    ; optional: settings for BeamForge
+frame_hz     = 60
 ```
+
+The board sections come last: the lines above them are the package's
+(the menu reads those). A section's `frame_hz` (10 to 120) overrides the
+game's `frame_hz_board` on that board, without rebuilding: `vp_run` reads
+the section of the board that answered. The game itself (`update_hz`) is
+not changed.
 
 No value may hold `:` or `|` (the menu's own separators). `;` or `#`
 starts a comment.
+
+**`kind = screensaver`** makes a screensaver app, not a game: `vp-pack` then
+writes a **`.vps`** instead of a `.vpk`, which the cabinet installs apart
+from its games and offers in its SCREENSAVER setting. See
+[09 — Screensavers](09-screensavers.md).
 
 ## Running
 
@@ -112,6 +129,11 @@ To get it on the cabinet, either:
   drive in: INSTALL GAMES copies it to `/persistent/games/packages/` first;
 * or copy it straight to `/persistent/games/packages/` (scp, the network
   share), no USB drive needed.
+* or have it listed in the online games index
+  ([vectorpie-games](https://github.com/Goldfinch2/vectorpie-games)):
+  INSTALL GAMES lists those too, downloads the chosen one into
+  `/persistent/games/packages/` (its size and SHA-256 checked against the
+  index), then installs it like any other.
 
 INSTALL GAMES offers the `.vpk` files in that folder that are new games or
 newer versions of installed ones, and asks before installing; a file is

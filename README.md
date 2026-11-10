@@ -1,30 +1,34 @@
 # Vector Defender
 
-Williams' **Defender** (1980, Eugene Jarvis und Sam Dicker, Red Label) für den VectorPie-Automaten: das Spiel ist das Original, aus seinem 6809-Quelltext automatisch nach C++ übersetzt – kein Emulator, keine ROM-Dateien. Nur das Bild ist neu: Jedes Sprite, die Schrift, das Logo, das Gebirge und alle Effekte werden als Farbvektoren gezeichnet, mit 60 Bildern pro Sekunde wie das Original.
+Williams' **Defender** (1980, Eugene Jarvis and Sam Dicker, Red Label) for the VectorPie cabinet. The game is the original, translated automatically from its 6809 source code to C++: no emulator, no ROM files. Only the picture is new: every sprite, the lettering, the logos, the mountains and all effects are drawn as colour vectors, at 60 frames a second like the original.
 
-- Spielablauf, Gegner, Punkte, Zufall, Timing, Attract-Modus, Bestenliste, Münzen und Einstellungen: exakt wie das Original (es ist dessen Programm).
-- Startet direkt in den Attract-Modus (der Einschalttest des Originals läuft unsichtbar durch).
-- Ton: die Soundplatine, ebenfalls aus ihrem Quelltext übersetzt.
-- F2: Service-Menü mit völlig freier Belegung (jede Funktion auf zwei beliebige Tasten, Joystick-Knöpfe, Achsen oder Hats), Helligkeiten, Bildgröße und die Spieleinstellungen des Originals (Schiffe, Bonus, Münzen, Free Play, Schwierigkeit) als normale Optionen.
+- Gameplay, enemies, scoring, randomness, timing, attract mode, high scores, coinage and settings: exactly as the original (it is the original's program).
+- Boots straight into the attract mode (the original's power-on test runs unseen).
+- Sound: the sound board, also translated from its source code. On the cabinet it plays at the VectorPie menu's SOUND VOLUME, with the game's own VOLUME on top.
+- F2: service menu with completely free bindings (every function on any number of keys, joystick buttons, hats, axes or mouse buttons), brightness, picture size, and the original's game settings (ships, bonus, coinage, free play, difficulty) as plain options.
 
-Bauen und Testen: [BUILD.md](BUILD.md). Stand und offene Punkte: [STATUS.md](STATUS.md). Zum Weiterarbeiten: [RESUME.md](RESUME.md).
+Building and testing: [BUILD.md](BUILD.md). State and open items: [STATUS.md](STATUS.md). For continuing the work: [RESUME.md](RESUME.md).
 
-## Steuerung (Vorgabe = advmame.rc des Automaten, im F2-Menü frei belegbar)
+## Controls (defaults = the cabinet's advmame.rc, freely bindable in the F2 menu)
 
-| Funktion | Automat | PC |
+| Function | Cabinet | PC |
 |---|---|---|
-| hoch / runter | Stick P1 | Pfeiltasten |
-| Feuer | Knopf 1 | Linke Strg |
-| Schub | Knopf 2 | Alt |
-| Smart Bomb | Knopf 3 | Leertaste |
-| Hyperspace | Knopf 4 | Shift |
-| Reverse | Knopf 5 | Z |
-| Münze / Start | coin1, coin2 / start1, start2 | 5, 6 / 1, 2 |
+| up / down | Stick P1 | arrow keys |
+| Fire | Button 1 | Left Ctrl |
+| Thrust | Button 2 | Alt |
+| Smart Bomb | Button 3 | Space |
+| Hyperspace | Button 4 | Shift |
+| Reverse | Button 5 | Z |
+| Coin / Start | coin1, coin2 / start1, start2 | 5, 6 / 1, 2 |
 
-Mit STICK STEERING (F2 → CONTROLS) fliegt das Schiff mit Stick links/rechts in diese Richtung (Drehen + Schub, oder nur Drehen); der Reverse-Knopf geht weiterhin.
+With STICK STEERING (F2 → CONTROLS) stick left/right flies the ship that way (turn and thrust, or turn only); the Reverse button still works.
 
-## Ansicht
+## View
 
-F2 → VIDEO → VIEW: CLASSIC (flach wie das Original), 3D (Schiff und Gegner als 3D-Modelle, leicht schräger Blick, Gebirge mit Tiefe) oder 3D DYNAMIC (die Kamera dreht sich in die Flugrichtung, je schneller desto mehr, als sähe man weiter voraus). 3D gilt für das Spielfeld – im Spiel und in der Attract-Demo; Titel, Hall of Fame und Texttafeln bleiben klassisch. Das Spiel selbst ist in allen Ansichten dasselbe.
+F2 → VIDEO → VIEW: CLASSIC (flat like the original), 3D (ship and enemies as 3D models, a slightly tilted view, mountains with depth), 3D DYNAMIC (the camera turns the way you fly, the faster the more, as if looking further ahead) or 3D ENEMIES (the classic picture, only enemies and humanoids as 3D models). 3D applies to the playfield, in the game and in the attract demo; title, Hall of Fame and text pages stay classic. The game itself is the same in every view.
 
-Quelltext des Originals: github.com/mwenge/defender (aus historicalsource/defender).
+## Installing
+
+Download `vdefender-<version>.vpk` from the releases and copy it to a USB drive (its `games` folder) or over the network to `/persistent/games/packages/` on the cabinet, then Settings → GAMES → INSTALL GAMES. The game shows under Midway.
+
+Source code of the original: github.com/mwenge/defender (from historicalsource/defender).

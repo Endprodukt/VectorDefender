@@ -1,15 +1,15 @@
-# Bauen
+# Building
 
-## Übersetzen (nur nach Änderungen am Übersetzer)
+## Translating (only after changes to the translator)
 
-Der Spielcode in `src/gen/` ist erzeugt und eingecheckt; zum normalen Bauen braucht es keinen Assembler. Neu erzeugen:
+The game code in `src/gen/` is generated and checked in; a normal build needs no assembler. To regenerate:
 
 ```bash
-python tools/translate/asm2cpp.py     # Hauptprogramm: src/gen/defender_code.cpp, defender_data.inc, defender_syms.hpp
-python tools/translate/snd2cpp.py     # Soundplatine:  src/gen/sound_code.cpp, sound_data.inc
+python tools/translate/asm2cpp.py     # main program: src/gen/defender_code.cpp, defender_data.inc, defender_syms.hpp
+python tools/translate/snd2cpp.py     # sound board:  src/gen/sound_code.cpp, sound_data.inc
 ```
 
-Die Eingaben dafür liegen in `reference/defender` (Klon von github.com/mwenge/defender): die Listings in `bin/` und die ROM-Abbilder in `redlabel/`. Erzeugt wurden sie so (MSYS2, einmalig `pacman -S bison flex autoconf automake make`):
+Their inputs are in `reference/defender` (a clone of github.com/mwenge/defender): the listings in `bin/` and the ROM images in `redlabel/`. They were made like this (MSYS2, once `pacman -S bison flex autoconf automake make`):
 
 ```bash
 cd reference/defender
@@ -24,13 +24,13 @@ mkdir -p bin
 ./vasm-mirror/vasm6800_oldstyle -Fbin -ast -unsshift src/vsndrm1.src -L bin/vsndrm1.lst -o bin/vsndrm1.o
 ```
 
-danach die `redlabel`-Schritte des Makefiles (mit `python ChainFilesToRom.py` / `python PatchROM.py`); jedes Abbild wird dort per MD5 gegen das Original geprüft.
+then the `redlabel` steps of the Makefile (with `python ChainFilesToRom.py` / `python PatchROM.py`); each image is checked there by MD5 against the original.
 
-Haken und Adressen, die die Vektorseite braucht, stehen als Label-Namen in `tools/translate/hooks.txt` und `tools/translate/symbols.txt`.
+The hooks and addresses the vector side needs are given as label names in `tools/translate/hooks.txt` and `tools/translate/symbols.txt`.
 
-## PC (Windows, nativ)
+## PC (Windows, native)
 
-Voraussetzung: MSYS2 mit MinGW-w64-GCC und SDL2 unter `C:\msys64\mingw64`, CMake, Ninja.
+Requires MSYS2 with MinGW-w64 GCC and SDL2 in `C:\msys64\mingw64`, CMake, Ninja.
 
 ```bash
 export PATH="/c/msys64/mingw64/bin:$PATH"
@@ -39,11 +39,11 @@ cmake --build build/pc
 build/pc/vdefender.exe --windowed
 ```
 
-Einstellungen in `build/pc/save/settings.ini`, das CMOS des Spiels (Münzeinstellungen, Bestenliste) in `build/pc/save/cmos.bin`.
+Settings in `build/pc/save/settings.ini`, the game's CMOS (coinage, high scores) in `build/pc/save/cmos.bin`.
 
-Tasten am PC (AdvanceMAME-Vorgaben): Pfeil hoch/runter = Schiff, Linke Strg = Feuer, Alt = Schub, Leertaste = Smart Bomb, Shift = Hyperspace, Z = Reverse, 5 = Münze, 1 / 2 = Start, F2 = Service-Menü, Esc = Ende.
+Keys on the PC (AdvanceMAME defaults): arrow up/down = ship, Left Ctrl = fire, Alt = thrust, Space = Smart Bomb, Shift = hyperspace, Z = reverse, 5 = coin, 1 / 2 = start, F2 = service menu, Esc = quit.
 
-`VD_TRACE=1` gibt einmal pro Sekunde aus, was die Szene enthält, und jede Änderung der Schalter, die beim Spiel ankommen (zum Prüfen der Belegung). `VP_STATS=1` die Kosten eines Bildes (SDK).
+`VD_TRACE=1` prints once a second what the scene holds, and every change of the switches that reach the game (to check the bindings). `VP_STATS=1` the cost of a frame (SDK).
 
 ## Raspberry Pi (arm64)
 
@@ -55,27 +55,32 @@ cmake --build build/pi
 
 Sysroot: `F:/Tempest 2000 Port/build/pi-sysroot` (`VD_PI_SYSROOT` in `cmake/toolchain-pi-clang.cmake`).
 
-## Paket für den Automaten
+## The SDK
+
+`vendor/VectorPie` is the VectorPie SDK 0.9.0 (github.com/Goldfinch2/VectorPie, b00d537) with this project's two additions, marked "Vector Defender addition": frame pacing in fractions of a millisecond (`sdk/src/app/vp_app.cpp`) and `vp_stream_set_effects` (`sdk/include/vectorpie/vp_audio.h`, `sdk/src/audio/vp_audio.cpp`), so the sound board's stream follows the cabinet's SOUND VOLUME. On an SDK update, copy the new SDK over (without `.git` and build folders) and re-apply both.
+
+## Package for the cabinet
 
 ```bash
 sh tools/make_vpk.sh
 ```
 
-schreibt `build/vdefender-<version>.vpk`. Es enthält keine ROM-Dateien (das Spiel ist der übersetzte Code). Installieren: in `/persistent/games/packages/` legen oder per USB-Stick (`games/`), dann im Menü Settings, GAMES, INSTALL GAMES; oder direkt nach `/persistent/games/vdefender/` entpacken. `save/` bleibt bei Updates erhalten.
+writes `build/vdefender-<version>.vpk`. It contains no ROM files (the game is the translated code). Installing: put it in `/persistent/games/packages/` or on a USB drive (`games/`), then in the menu Settings, GAMES, INSTALL GAMES; or unpack it directly: `tar xzf vdefender-<version>.vpk -C /persistent/games` (the package's root is `vdefender/`; do **not** unpack it inside `/persistent/games/vdefender`, that replaces the program file with a folder and the game does not start). `save/` is kept on updates.
 
-## Testen ohne Fenster
+## Testing without a window
 
 ```bash
 build/pc/defrun.exe 2800 --cmos build/cmos.bin --press 1400:2:0x10:8 --press 1500:0:0x20:6 --dump 1650,1900 --out build/shots --wav build/test.wav
 python tools/montage.py build/shots/m.png 2 build/shots/v1650.ppm build/shots/v1900.ppm
 ```
 
-- `--press bild:port:maske:dauer` hält Schalter (Port 0..2 = IN0..IN2, Bits in `src/game/board.hpp`; 2:0x10 = Münze, 0:0x20 = Start 1, 0:0x01 = Feuer, 0:0x02 = Schub).
-- `--dump` schreibt je Bild `f<bild>.ppm` (das Pixelbild, das der Originalcode intern weiter zeichnet) und `v<bild>.ppm` (die Vektorlinien, gerastert).
-- `--wav` den Ton. `--cmos` das CMOS (ohne: leeres CMOS, das Spiel landet nach den Werkseinstellungen in der Buchhaltung).
-- `--trace` meldet Bilder mit Explosionen, Spielerexplosion und Blitz.
-- `--view 1` (3D) oder `--view 2` (3D DYNAMIC) schreibt zu jedem `--dump` auch `w<bild>.ppm`, die 3D-Ansicht so, wie sie an das Board ginge.
-- `defrun --marquee build/marquee.ppm` rendert ein Vektor-Marquee. Nicht mehr verwenden: `package/marquee.png` ist das Marquee des Besitzers.
-- `python tools/pictures.py build/pictures.png 8`: Bogen aller Original-Sprites.
+- `--press frame:port:mask:duration` holds switches (port 0..2 = IN0..IN2, bits in `src/game/board.hpp`; 2:0x10 = coin, 0:0x20 = start 1, 0:0x01 = fire, 0:0x02 = thrust).
+- `--dump` writes per frame `f<frame>.ppm` (the pixel picture the original code still draws internally) and `v<frame>.ppm` (the vector lines, rasterised).
+- `--wav` the sound. `--cmos` the CMOS (without: an empty CMOS, the game ends up in bookkeeping after the factory settings).
+- `--trace` reports frames with explosions, the player explosion and the flash.
+- `--jitter <frame>` measures from that frame how unevenly objects move (exact against whole-number positions); `--watch <address>` reports every change of a RAM byte.
+- `--view 1` (3D) or `--view 2` (3D DYNAMIC) also writes `w<frame>.ppm` for every `--dump`, the 3D view as it would go to the board.
+- `defrun --logos build/logos.ppm` draws the Williams and DEFENDER logos large (for designing, `src/scene/logos.cpp`).
+- `python tools/pictures.py build/pictures.png 8`: a sheet of all the original's sprites.
 
-Fensteraufnahmen (`tools/snap.ps1`) liefern bei diesem OpenGL-Fenster nur Schwarz; zum Ansehen `defrun --dump` nehmen.
+Window captures (`tools/snap.ps1`) give only black for this OpenGL window; use `defrun --dump` to look at pictures.

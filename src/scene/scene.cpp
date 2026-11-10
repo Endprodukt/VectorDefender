@@ -51,6 +51,13 @@ void Scene::hookThunk(void* user, Machine& m, uint16_t pc)
 // read in bank 2, where the writers read them (the IRQ and CWRIT map it in).
 void Scene::onHook(Machine& m, uint16_t pc)
 {
+    if(pc == sym::BLK71_BGOUT)
+    {
+        // the terrain is drawn for the scroll position BGL rounded down to
+        // a whole pixel: what it lost puts the line where it truly is
+        terrainFrac_ = static_cast<float>(m.peek16(sym::BGL) & 0x1F) / 32.f;
+        return;
+    }
     Item it{};
     it.desc = m.c.y;
     it.x = static_cast<int16_t>(m.c.a * 2);
@@ -68,14 +75,58 @@ void Scene::onHook(Machine& m, uint16_t pc)
     it.text = cwrite && idx >= 0 && idx < CHARS * 4 && idx % 4 == 0;
     it.glyph = static_cast<int8_t>(it.text ? idx / 4 : -1);
     if(it.w == 0 || it.h == 0 || it.w > 64 || it.h > 64) return;
-    // the same place again: the newer one takes over
-    for(Item& o : items_)
-        if(o.x == it.x && o.y == it.y)
+
+    // Where it truly is. The original draws in whole pixels; its positions
+    // are finer (16 bits: x in 1/32, y in 1/256 of a pixel), so a thing
+    // moving 1.5 pixels a picture steps 1, 2, 1, 2 - a judder a sharp
+    // vector line shows. Read here, as the picture is written: the ship's
+    // PLAX16/PLAY16; an object's OX16/OY16 against the scroll (BGL), the
+    // object being in X (OPROC has just stored the address it draws at).
+    it.fx = static_cast<float>(it.x + it.phase);
+    it.fy = static_cast<float>(it.y);
+    if(!cwrite)
+    {
+        const int a = m.c.a, bline = m.c.b;
+        if(it.desc == sym::PLAPIC || it.desc == sym::PLBPIC)
         {
-            o = it;
-            return;
+            const uint16_t px16 = m.peek16(sym::PLAX16), py16 = m.peek16(sym::PLAY16);
+            if((px16 >> 8) == a && (py16 >> 8) == bline)
+            {
+                it.fx = static_cast<float>(px16) / 128.f;
+                it.fy = static_cast<float>(py16) / 256.f;
+            }
         }
-    items_.push_back(it);
+        else if(m.c.x >= sym::OLIST && m.c.x < sym::OLEND && m.peek16(static_cast<uint16_t>(m.c.x + 4)) == ((a << 8) | bline))
+        {
+            const uint16_t ox16 = m.peek16(static_cast<uint16_t>(m.c.x + 0x0A));
+            const uint16_t oy16 = m.peek16(static_cast<uint16_t>(m.c.x + 0x0C));
+            const float px = static_cast<float>(static_cast<uint16_t>(ox16 - m.peek16(sym::BGL))) / 32.f;
+            if(std::fabs(px - it.fx) < 2.f) it.fx = px;
+            if((oy16 >> 8) == bline) it.fy = static_cast<float>(oy16) / 256.f;
+        }
+    }
+    // The original writes its pictures whole, background and all: what this
+    // one covers of an older picture is gone. An older one it overlaps
+    // (most often the same object a step back, not yet found erased) gives
+    // way, so a moving object is never seen twice. The same place again
+    // keeps its turn in the drawing order.
+    const int x0 = it.x, x1 = it.x + it.w * 2, y0 = it.y, y1 = it.y + it.h;
+    bool replaced = false;
+    for(size_t i = 0; i < items_.size();)
+    {
+        const Item& o = items_[i];
+        const bool same = o.x == it.x && o.y == it.y;
+        const bool overlap = o.x < x1 && x0 < o.x + o.w * 2 && o.y < y1 && y0 < o.y + o.h;
+        if(same && !replaced)
+        {
+            items_[i] = it;
+            replaced = true;
+            ++i;
+        }
+        else if(overlap) items_.erase(items_.begin() + static_cast<long>(i));
+        else ++i;
+    }
+    if(!replaced) items_.push_back(it);
 }
 
 // Is the picture still there? Counts its lit pixels that the screen shows
@@ -117,7 +168,8 @@ void Scene::build(const Board& b, std::vector<Line>& out, std::vector<Part>* par
     colors(b, pal);
     auto emit = [&](float x0, float y0, float x1, float y1, int c, Part p)
     {
-        const Rgb& k = pal[c & 15];
+        static const Rgb fixed[2] = {{255, 225, 0}, {225, 20, 10}};   // FIXED: the marquee's yellow and red
+        const Rgb& k = (c & FIXED) ? fixed[c & 1] : pal[c & 15];
         if(!k.r && !k.g && !k.b) return;
         out.push_back(Line{x0, y0, x1, y1, k.r, k.g, k.b, curObj_});
         if(parts) parts->push_back(p);
@@ -161,7 +213,7 @@ void Scene::build(const Board& b, std::vector<Line>& out, std::vector<Part>* par
             continue;
         }
         it.text ? ++stats_.glyphs : ++stats_.designed;
-        float ox = static_cast<float>(it.x + it.phase), oy = static_cast<float>(it.y), sx = 1.f, sy = 1.f;
+        float ox = it.fx, oy = it.fy, sx = 1.f, sy = 1.f;
         int rank[16];
         for(int& r : rank) r = 1;
         if(d->fitW > 0)
@@ -245,7 +297,7 @@ void Scene::build(const Board& b, std::vector<Line>& out, std::vector<Part>* par
                 open = false;
                 continue;
             }
-            const float x = sx / static_cast<float>(n), y = sy / static_cast<float>(n);
+            const float x = sx / static_cast<float>(n) - terrainFrac_, y = sy / static_cast<float>(n);
             ++stats_.terrainPoints;
             if(open) emit(px, py, x, y, pc, Part::Terrain);
             px = x;
@@ -339,35 +391,53 @@ void Scene::penLogo(const Board& b, const Emit& emit)
             }
         }
     }
-    std::vector<DPoint> run, simple;
-    for(const auto& stroke : pen_)
-    {
-        int col = 0;
-        auto flush = [&]()
-        {
-            if(run.size() >= 2)
+    // How far the original has written: its pen's pixels lit now. The
+    // vector script (williamsLogo, logos.cpp) stands where the original's
+    // stands, over the bounds of the pen's whole path, and is drawn as far
+    // along its own line as the original is along its path.
+    if(penX1_ < penX0_)
+        for(const auto& stroke : pen_)
+            for(const DPoint& p : stroke)
             {
-                simplify(run, simple, 1.2f);
-                for(size_t i = 1; i < simple.size(); ++i)
-                    emit(simple[i - 1].x, simple[i - 1].y, simple[i].x, simple[i].y, col, Part::Text);
+                penX0_ = std::min(penX0_, p.x - 0.5f);
+                penX1_ = std::max(penX1_, p.x + 0.5f);
+                penY0_ = std::min(penY0_, p.y - 0.5f);
+                penY1_ = std::max(penY1_, p.y + 0.5f);
             }
-            run.clear();
-        };
+    int total = 0, lit = 0, col = 0;
+    for(const auto& stroke : pen_)
         for(const DPoint& p : stroke)
         {
             const int x = static_cast<int>(p.x), y = static_cast<int>(p.y);
+            ++total;
             const int v = (x >= 0 && x < W && y >= 0 && y < H) ? b.pixel(x, y) : 0;
-            if(!v || claimed_[static_cast<size_t>(y * W + x)] == 2)
-            {
-                flush();
-                continue;
-            }
+            if(!v || claimed_[static_cast<size_t>(y * W + x)] == 2) continue;
+            ++lit;
             col = v;
-            run.push_back(p);
             claimed_[static_cast<size_t>(y * W + x)] = 1;
         }
-        flush();
-    }
+    if(!lit || !total) return;
+    const Design& d = williamsLogo();
+    const float sx = (penX1_ - penX0_) / d.fitW, sy = (penY1_ - penY0_) / d.fitH;
+    float length = 0;
+    for(const DStroke& s : d.strokes)
+        for(size_t i = 1; i < s.pts.size(); ++i)
+            length += std::hypot((s.pts[i].x - s.pts[i - 1].x) * sx, (s.pts[i].y - s.pts[i - 1].y) * sy);
+    float left = length * static_cast<float>(lit) / static_cast<float>(total);
+    for(const DStroke& s : d.strokes)
+        for(size_t i = 1; i < s.pts.size() && left > 0; ++i)
+        {
+            const float ax = penX0_ + s.pts[i - 1].x * sx, ay = penY0_ + s.pts[i - 1].y * sy;
+            float bx = penX0_ + s.pts[i].x * sx, by = penY0_ + s.pts[i].y * sy;
+            const float seg = std::hypot(bx - ax, by - ay);
+            if(seg > left)
+            {
+                bx = ax + (bx - ax) * left / seg;
+                by = ay + (by - ay) * left / seg;
+            }
+            left -= seg;
+            emit(ax, ay, bx, by, col, Part::Text);
+        }
 }
 
 // Explosions and appearances (samexap7): a RAM block each, RAMSIZ bytes

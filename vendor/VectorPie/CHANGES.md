@@ -1,3 +1,40 @@
+### vectorpie-1.1.13
+
+
+● What's new
+
+  VectorPie supports custom screensaver apps in the app store.
+
+  Changes to the Settings menu.
+
+  New SERVICE and UI SELECT mappings in GAME CONTROLS.
+
+
+
+### vectorpie-1.1.12
+
+
+● What's new
+
+  Reordered the Settings menu to have the most used items first.
+
+  New VectorPie logo on the vector screensaver.
+
+  Corrected UI issues.
+
+
+
+### vectorpie-1.1.11
+
+
+● What's new
+
+  New VectorPie app store. Settings -> GAMES -> INSTALL GAMES... now lists the games available online next to those from a USB drive. Pick one and it is downloaded, verified and installed in one step. First games: Geometry Wars, Neverball and GLtron.
+
+  Small improvements and fixes: long names and descriptions scroll on the vector monitor in the GAMES pages, and some game packages INSTALL GAMES refused now install.
+
+
+
 ### vectorpie-1.1.10
 
 

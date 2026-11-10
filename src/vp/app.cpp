@@ -7,7 +7,6 @@
 #include "app.hpp"
 
 #include "adjust.hpp"
-#include "bind.hpp"
 #include "controls.hpp"
 #include "render.hpp"
 #include "service.hpp"
@@ -112,9 +111,14 @@ void pushSound()
     const float vol = static_cast<float>(A.set.volume) / 100.f;
     A.stereo.resize(s.size() * 2);
     for(size_t i = 0; i < s.size(); ++i) A.stereo[2 * i] = A.stereo[2 * i + 1] = s[i] * vol;
-    if(!A.pcm) A.pcm = vp_pcm_play(A.audio, AUDIO_RATE, 1.f);
-    if(vp_pcm_queued(A.audio, A.pcm) > AUDIO_MAX_QUEUE) return;
-    vp_pcm_push(A.audio, A.pcm, A.stereo.data(), static_cast<int>(s.size()));
+    if(!A.pcm)
+    {
+        // the game's sound effects: on the cabinet at the menu's SOUND VOLUME
+        A.pcm = vp_stream_play(A.audio, AUDIO_RATE, 1.f);
+        vp_stream_set_effects(A.audio, A.pcm);
+    }
+    if(vp_stream_queued(A.audio, A.pcm) > AUDIO_MAX_QUEUE) return;
+    vp_stream_write(A.audio, A.pcm, A.stereo.data(), static_cast<int>(s.size()));
 }
 
 void applySettings()
@@ -145,7 +149,6 @@ const Settings& appBootSettings()
 int appInit(vp_game* g)
 {
     A.audio = vp_game_audio(g);
-    bindInit();
     appBootSettings();
     ui::R = &A.renderer;
     applySettings();
@@ -157,7 +160,6 @@ int appInit(vp_game* g)
 void appUpdate(vp_game* g, float)
 {
     vp_input* in = vp_game_input(g);
-    bindUpdate(in);
     const bool hotkey = serviceHotkey();
     ++A.ticks;
 
@@ -187,7 +189,7 @@ void appUpdate(vp_game* g, float)
     }
     if(A.board.m.broken) return;
 
-    const df::Inputs inputs = A.controls.read(A.set, A.board);
+    const df::Inputs inputs = A.controls.read(in, A.set, A.board);
     A.board.frame(inputs, AUDIO_PER_UPDATE);
     pushSound();
     A.scene.build(A.board, A.lines, &A.parts);

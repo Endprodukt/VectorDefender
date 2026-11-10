@@ -5,11 +5,13 @@
 //                  device lock
 //   audio callback mixes the voices (SDL calls it with the device lock held)
 //   feeder thread  reads streamed WAV or Ogg Vorbis files into each stream's
-//                  ring buffer
+//                  ring buffer (a game's own stream, vp_stream_play, is
+//                  written by the game thread instead)
 //                  (single producer: feeder, single consumer: callback), and
 //                  frees streams whose voice has ended
 // The callback never touches a file or allocates.
 
+#include <climits>
 #include "../core/vp_internal.h"
 
 #include <SDL.h>
@@ -159,7 +161,8 @@ struct Stream {
     std::atomic<uint32_t> readFrames{0};    // total frames consumed (callback)
     std::atomic<bool> eof{false};           // nothing more will be written
     bool     released = false;          // its voice is gone: free it (feeder)
-    bool     pushed = false;            // Red Alarm: filled by vp_pcm_push, not from a file
+    bool     pushed = false;            // written by the game (vp_stream_write), not from a file
+    std::vector<unsigned char> mem;     // Ogg from memory (vp_music_play_mem): its own copy
 };
 
 void closeStream(Stream *s)
@@ -209,8 +212,7 @@ void feedOgg(Stream *s)
 // the stream is visible to the callback).
 void feed(Stream *s)
 {
-    if (s->eof.load(std::memory_order_relaxed)) return;
-    if (s->pushed) return;              // Red Alarm: the program fills it
+    if (s->pushed || s->eof.load(std::memory_order_relaxed)) return;
     if (s->ogg) { feedOgg(s); return; }
     static thread_local std::vector<uint8_t> raw;
     static thread_local std::vector<float> conv;
@@ -254,6 +256,7 @@ struct Voice {
     uint32_t  generation = 0;
     vp_sound *sound = nullptr;          // an effect, or
     Stream   *stream = nullptr;         // a stream
+    bool      effects = false;          // Vector Defender addition: a stream at the cabinet's SOUND VOLUME
     double    pos = 0;                  // effect: frame position; stream: fraction past readFrames
     float     pitch = 1;
     double    step = 1;                 // source frames per device frame
@@ -275,6 +278,7 @@ struct vp_audio {
     SDL_AudioDeviceID dev = 0;
     int    rate = DEVICE_RATE;
     float  master = 1.0f;
+    float  musicGain = 1.0f, effectsGain = 1.0f;    // the menu's MUSIC / SOUND VOLUME (menuVolumes)
     Voice  voices[VP_AUDIO_VOICES];
     uint32_t nextGeneration = 1;
     uint32_t refused = 0;
@@ -285,7 +289,13 @@ struct vp_audio {
     std::vector<Stream *> streams;
     std::thread feeder;
     std::atomic<bool> stopFeeder{false};
+
+    float recent[VP_AUDIO_RECENT][2] = {};      // the last frames mixed, left and right (vp_audio_recent)
+    std::atomic<uint32_t> recentPos{0};         // frames written so far
 };
+
+// The VectorPie menu's settings, on the cabinet.
+#define VP_MENU_CONFIG "/usr/local/share/advance/vector_pie_menu.cfg"
 
 namespace {
 
@@ -387,6 +397,7 @@ void SDLCALL mix(void *userdata, Uint8 *stream, int len)
                 uint32_t avail = s->writeFrames.load(std::memory_order_acquire) - rd;
                 if (avail < 3) {
                     if (s->eof.load(std::memory_order_acquire)) { endVoice(v); break; }
+                    // (a game's own stream running dry is the game's pace, not a disk too slow)
                     if (!s->pushed) a->underruns.fetch_add(1, std::memory_order_relaxed);
                     break;      // silence for the rest of this buffer
                 }
@@ -408,19 +419,25 @@ void SDLCALL mix(void *userdata, Uint8 *stream, int len)
                     s->readFrames.store(rd + whole, std::memory_order_release);
                 }
             }
-            out[i * 2]     += l * v.vol;
-            out[i * 2 + 1] += r * v.vol;
+            const float gain = v.vol * (v.sound || v.effects ? a->effectsGain : a->musicGain);   // the cabinet's levels
+            out[i * 2]     += l * gain;
+            out[i * 2 + 1] += r * gain;
         }
     }
 
     // The master volume, then clipped at full scale: keep the voices'
     // volumes such that they do not add up past it (clipping is heard as a
     // pop or a burst of noise).
+    uint32_t pos = a->recentPos.load(std::memory_order_relaxed);
     for (int i = 0; i < frames; i++) {
         float l = out[i * 2] * a->master, r = out[i * 2 + 1] * a->master;
         out[i * 2]     = l > 1.0f ? 1.0f : (l < -1.0f ? -1.0f : l);
         out[i * 2 + 1] = r > 1.0f ? 1.0f : (r < -1.0f ? -1.0f : r);
+        float *keep = a->recent[(pos + (uint32_t)i) % VP_AUDIO_RECENT];
+        keep[0] = out[i * 2];
+        keep[1] = out[i * 2 + 1];
     }
+    a->recentPos.store(pos + (uint32_t)frames, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +485,26 @@ void feederLoop(vp_audio *a)
 // Public API
 // ---------------------------------------------------------------------------
 
+// The cabinet's volumes, as set in the VectorPie menu (its vector_pie_menu.cfg,
+// [audio] music_volume and effects_volume, 0-100): every game's music (its
+// streams) and effects (its sounds) are at those levels, as the menu's own.
+// No menu (a PC): both full.
+static void menuVolumes(vp_audio *a)
+{
+    FILE *f = fopen(VP_MENU_CONFIG, "r");
+    if (!f) return;
+    char line[256];
+    bool audio = false;
+    while (fgets(line, sizeof line, f)) {
+        if (line[0] == '[') { audio = strncmp(line, "[audio]", 7) == 0; continue; }
+        int v = 0;
+        if (!audio) continue;
+        if (sscanf(line, " music_volume %d", &v) == 1) a->musicGain = (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f;
+        if (sscanf(line, " effects_volume %d", &v) == 1) a->effectsGain = (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f;
+    }
+    fclose(f);
+}
+
 int vp_audio_open(vp_audio **out)
 {
     if (!out) return vp_fail(VP_ERR_INVALID, "vp_audio_open: NULL argument");
@@ -497,6 +534,7 @@ int vp_audio_open(vp_audio **out)
         return r;
     }
     a->rate = have.freq;
+    menuVolumes(a);
     a->feeder = std::thread(feederLoop, a);
     SDL_PauseAudioDevice(a->dev, 0);
     *out = a;
@@ -629,30 +667,10 @@ vp_voice vp_sound_play(vp_audio *a, vp_sound *s, float volume, float pitch, int 
     return h;
 }
 
-vp_voice vp_music_play(vp_audio *a, const char *path, float volume, int loop, float fade_in_s)
+// Start a stream opened by one of the play calls: it takes its voice, or is
+// closed.
+static vp_voice startStream(vp_audio *a, Stream *s, float volume, int loop, float fade_in_s)
 {
-    if (!a || !path) return 0;
-    Stream *s = new (std::nothrow) Stream;
-    if (!s) { vp_fail(VP_ERR_NOMEM, "out of memory"); return 0; }
-    if (isOgg(path)) {
-        int err = 0;
-        s->ogg = stb_vorbis_open_filename(path, &err, nullptr);
-        if (!s->ogg) {
-            delete s;
-            vp_fail(VP_ERR_INVALID, "%s: not a readable Ogg Vorbis file (error %d)", path, err);
-            return 0;
-        }
-        stb_vorbis_info info = stb_vorbis_get_info(s->ogg);
-        s->wav.rate = (int)info.sample_rate;
-        s->wav.channels = 2;
-        s->oggChannels = info.channels == 1 ? 1 : 2;
-    } else {
-        FILE *f = fopen(path, "rb");
-        if (!f) { delete s; vp_fail(VP_ERR_NOTFOUND, "cannot open %s", path); return 0; }
-        s->file = f;
-        if (readWavHeader(f, path, &s->wav) != VP_OK) { closeStream(s); return 0; }
-        s->bytesLeft = s->wav.dataBytes;
-    }
     s->loop = loop != 0;
     s->ring.assign((size_t)RING_FRAMES * 2, 0.0f);
     feed(s);    // fill the ring now, so it starts at once
@@ -685,18 +703,75 @@ vp_voice vp_music_play(vp_audio *a, const char *path, float volume, int loop, fl
     return h;
 }
 
-// Red Alarm addition: a stream the program fills (vp_audio.h).
-vp_voice vp_pcm_play(vp_audio *a, int sample_rate, float volume)
+static void oggInfo(Stream *s)
 {
-    if (!a || sample_rate < 1000) return 0;
+    stb_vorbis_info info = stb_vorbis_get_info(s->ogg);
+    s->wav.rate = (int)info.sample_rate;
+    s->wav.channels = 2;
+    s->oggChannels = info.channels == 1 ? 1 : 2;
+}
+
+vp_voice vp_music_play(vp_audio *a, const char *path, float volume, int loop, float fade_in_s)
+{
+    if (!a || !path) return 0;
+    Stream *s = new (std::nothrow) Stream;
+    if (!s) { vp_fail(VP_ERR_NOMEM, "out of memory"); return 0; }
+    if (isOgg(path)) {
+        int err = 0;
+        s->ogg = stb_vorbis_open_filename(path, &err, nullptr);
+        if (!s->ogg) {
+            delete s;
+            vp_fail(VP_ERR_INVALID, "%s: not a readable Ogg Vorbis file (error %d)", path, err);
+            return 0;
+        }
+        oggInfo(s);
+    } else {
+        FILE *f = fopen(path, "rb");
+        if (!f) { delete s; vp_fail(VP_ERR_NOTFOUND, "cannot open %s", path); return 0; }
+        s->file = f;
+        if (readWavHeader(f, path, &s->wav) != VP_OK) { closeStream(s); return 0; }
+        s->bytesLeft = s->wav.dataBytes;
+    }
+    return startStream(a, s, volume, loop, fade_in_s);
+}
+
+vp_voice vp_music_play_mem(vp_audio *a, const void *data, size_t size, float volume, int loop,
+                           float fade_in_s)
+{
+    if (!a || !data) return 0;
+    if (size < 4 || memcmp(data, "OggS", 4) != 0 || size > (size_t)INT_MAX) {
+        vp_fail(VP_ERR_INVALID, "music from memory: not Ogg Vorbis");
+        return 0;
+    }
+    Stream *s = new (std::nothrow) Stream;
+    if (!s) { vp_fail(VP_ERR_NOMEM, "out of memory"); return 0; }
+    try {
+        s->mem.assign((const unsigned char *)data, (const unsigned char *)data + size);
+    } catch (...) {
+        delete s;
+        vp_fail(VP_ERR_NOMEM, "out of memory");
+        return 0;
+    }
+    int err = 0;
+    s->ogg = stb_vorbis_open_memory(s->mem.data(), (int)size, &err, nullptr);
+    if (!s->ogg) {
+        delete s;
+        vp_fail(VP_ERR_INVALID, "music from memory: not readable Ogg Vorbis (error %d)", err);
+        return 0;
+    }
+    oggInfo(s);
+    return startStream(a, s, volume, loop, fade_in_s);
+}
+
+vp_voice vp_stream_play(vp_audio *a, int rate, float volume)
+{
+    if (!a || rate < 1000) return 0;
     Stream *s = new (std::nothrow) Stream;
     if (!s) { vp_fail(VP_ERR_NOMEM, "out of memory"); return 0; }
     s->pushed = true;
-    s->wav.rate = sample_rate;
+    s->wav.rate = rate;
     s->wav.channels = 2;
     s->ring.assign((size_t)RING_FRAMES * 2, 0.0f);
-    s->writeFrames.store(1);            // one silent frame behind the reader
-    s->readFrames.store(1);
 
     vp_voice h = 0;
     {
@@ -713,7 +788,7 @@ vp_voice vp_pcm_play(vp_audio *a, int sample_rate, float volume)
             if (v.generation == 0) v.generation = a->nextGeneration++ & 0xffffff;
             v.stream = s;
             v.pitch = 1.0f;
-            v.step = (double)sample_rate / a->rate;
+            v.step = (double)rate / a->rate;
             v.vol = v.target = volume;
             a->streams.push_back(s);
             h = handleOf(slot, v.generation);
@@ -724,41 +799,40 @@ vp_voice vp_pcm_play(vp_audio *a, int sample_rate, float volume)
     return h;
 }
 
-namespace {
-Stream *pushedStreamOf(vp_audio *a, vp_voice h)
+int vp_stream_write(vp_audio *a, vp_voice h, const float *frames, int count)
 {
+    if (!a || !frames || count <= 0) return 0;
+    int n = 0;
     SDL_LockAudioDevice(a->dev);
     Voice *v = voiceOf(a, h);
-    Stream *s = (v && !v->finished && v->stream && v->stream->pushed) ? v->stream : nullptr;
-    SDL_UnlockAudioDevice(a->dev);
-    return s;   // freed only by the feeder after its voice ended: the caller's voice
-}
-}
-
-int vp_pcm_push(vp_audio *a, vp_voice h, const float *stereo, int frames)
-{
-    if (!a || !stereo || frames <= 0) return 0;
-    Stream *s = pushedStreamOf(a, h);
-    if (!s) return 0;
-    uint32_t w = s->writeFrames.load(std::memory_order_relaxed);
-    uint32_t r = s->readFrames.load(std::memory_order_acquire);
-    uint32_t space = RING_FRAMES - RING_GUARD - (w - r);
-    uint32_t n = (uint32_t)frames < space ? (uint32_t)frames : space;
-    for (uint32_t i = 0; i < n; i++) {
-        uint32_t at = ((w + i) & (RING_FRAMES - 1)) * 2;
-        s->ring[at] = stereo[i * 2];
-        s->ring[at + 1] = stereo[i * 2 + 1];
+    if (v && v->stream && v->stream->pushed && !v->finished) {
+        Stream *s = v->stream;
+        uint32_t w = s->writeFrames.load(std::memory_order_relaxed);
+        uint32_t r = s->readFrames.load(std::memory_order_acquire);
+        uint32_t space = RING_FRAMES - RING_GUARD - (w - r);
+        n = count < (int)space ? count : (int)space;
+        for (int i = 0; i < n; i++) {
+            uint32_t at = ((w + (uint32_t)i) & (RING_FRAMES - 1)) * 2;
+            s->ring[at] = frames[i * 2];
+            s->ring[at + 1] = frames[i * 2 + 1];
+        }
+        s->writeFrames.store(w + (uint32_t)n, std::memory_order_release);
     }
-    s->writeFrames.store(w + n, std::memory_order_release);
-    return (int)n;
+    SDL_UnlockAudioDevice(a->dev);
+    return n;
 }
 
-int vp_pcm_queued(vp_audio *a, vp_voice h)
+int vp_stream_queued(vp_audio *a, vp_voice h)
 {
     if (!a) return 0;
-    Stream *s = pushedStreamOf(a, h);
-    if (!s) return 0;
-    return (int)(s->writeFrames.load(std::memory_order_acquire) - s->readFrames.load(std::memory_order_acquire));
+    int n = 0;
+    SDL_LockAudioDevice(a->dev);
+    Voice *v = voiceOf(a, h);
+    if (v && v->stream && v->stream->pushed)
+        n = (int)(v->stream->writeFrames.load(std::memory_order_relaxed) -
+                  v->stream->readFrames.load(std::memory_order_relaxed));
+    SDL_UnlockAudioDevice(a->dev);
+    return n;
 }
 
 void vp_voice_stop(vp_audio *a, vp_voice h, float fade_out_s)
@@ -779,6 +853,16 @@ void vp_voice_set_volume(vp_audio *a, vp_voice h, float volume, float fade_s)
     SDL_LockAudioDevice(a->dev);
     Voice *v = voiceOf(a, h);
     if (v && !v->stopAtTarget) setTarget(a, *v, volume, fade_s);
+    SDL_UnlockAudioDevice(a->dev);
+}
+
+// Vector Defender addition (vp_audio.h).
+void vp_stream_set_effects(vp_audio *a, vp_voice h)
+{
+    if (!a) return;
+    SDL_LockAudioDevice(a->dev);
+    Voice *v = voiceOf(a, h);
+    if (v && v->stream) v->effects = true;
     SDL_UnlockAudioDevice(a->dev);
 }
 
@@ -838,4 +922,29 @@ void vp_audio_get_stats(vp_audio *a, vp_audio_stats *st)
     SDL_UnlockAudioDevice(a->dev);
     st->underruns = a->underruns.load();
     st->sample_rate = a->rate;
+}
+
+int vp_audio_recent(vp_audio *a, float *mono, int count)
+{
+    if (!a || !mono || count <= 0) return 0;
+    if (count > VP_AUDIO_RECENT) count = VP_AUDIO_RECENT;
+    uint32_t end = a->recentPos.load(std::memory_order_acquire);
+    for (int i = 0; i < count; i++) {
+        const float *f = a->recent[(end - (uint32_t)count + (uint32_t)i) % VP_AUDIO_RECENT];
+        mono[i] = (f[0] + f[1]) * 0.5f;
+    }
+    return a->rate;
+}
+
+int vp_audio_recent_stereo(vp_audio *a, float *left, float *right, int count)
+{
+    if (!a || !left || !right || count <= 0) return 0;
+    if (count > VP_AUDIO_RECENT) count = VP_AUDIO_RECENT;
+    uint32_t end = a->recentPos.load(std::memory_order_acquire);
+    for (int i = 0; i < count; i++) {
+        const float *f = a->recent[(end - (uint32_t)count + (uint32_t)i) % VP_AUDIO_RECENT];
+        left[i] = f[0];
+        right[i] = f[1];
+    }
+    return a->rate;
 }

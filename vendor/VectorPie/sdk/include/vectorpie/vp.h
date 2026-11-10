@@ -9,12 +9,15 @@
 #include "vp_dvg.h"
 #include "vp_text.h"
 #include "vp_3d.h"
+#include "vp_physics.h"
 #include "vp_input.h"
+#include "vp_controls.h"
 #include "vp_audio.h"
 #include "vp_paths.h"
 #include "vp_hiscore.h"
 #include "vp_credits.h"
 #include "vp_marquee.h"
 #include "vp_app.h"
+#include "vp_saver.h"
 
 #endif /* VECTORPIE_VP_H */

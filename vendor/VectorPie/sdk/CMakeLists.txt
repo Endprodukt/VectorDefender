@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(vectorpie_sdk VERSION 0.1.0 LANGUAGES C CXX)
+project(vectorpie_sdk VERSION 0.9.0 LANGUAGES C CXX)
 
 # Builds, from WSL2 Debian 13 (trixie) after tools/setup-wsl.sh:
 #   PC (Windows .exe):  cmake --preset pc && cmake --build --preset pc
@@ -67,7 +67,19 @@ add_library(vectorpie STATIC
     src/3d/vp_3d.cpp
     src/3d/vp_obj.cpp
     src/3d/vp_scene.cpp
+    src/3d/vp_texture.cpp
+    src/physics/vp_physics.cpp
 )
+
+# ReactPhysics3D (zlib license, src/third_party/reactphysics3d/LICENSE):
+# the physics engine under vp_physics. Third-party code, kept as is; its
+# headers stay inside the SDK (games use vp_physics.h).
+file(GLOB_RECURSE VP_RP3D_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/reactphysics3d/src/*.cpp)
+target_sources(vectorpie PRIVATE ${VP_RP3D_SOURCES})
+set_source_files_properties(${VP_RP3D_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+target_include_directories(vectorpie PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/reactphysics3d/include)
 if(VP_WITH_SDL2)
     # The window output, the controls and the game loop need SDL2.
     target_sources(vectorpie PRIVATE
@@ -78,6 +90,7 @@ if(VP_WITH_SDL2)
         src/app/vp_initials.cpp
         src/app/vp_credits.cpp
         src/app/vp_marquee.cpp
+        src/app/vp_saver.cpp
         src/third_party/lodepng/lodepng.cpp
         src/third_party/stb/stb_vorbis.c)
     # lodepng (zlib license, see its header): third-party code, kept as is.
@@ -129,6 +142,26 @@ if(VP_BUILD_EXAMPLES)
         vp_program(hello)
         add_executable(lamps examples/lamps/main.c)
         vp_program(lamps)
+        add_executable(physics examples/physics/main.c)
+        vp_program(physics)
+        # The screensavers, and their packages for the cabinet (Settings ->
+        # SCREENSAVERS -> INSTALL): `--target vps` in the Pi build makes
+        # saver_<name>-<version>.vps from each one's game.ini.
+        add_custom_target(vps)
+        foreach(name spectrum pulse vu)
+            add_executable(saver-${name} examples/saver-${name}/main.c)
+            vp_program(saver-${name})
+            set(stage ${CMAKE_BINARY_DIR}/vps/saver_${name})
+            add_custom_target(vps-${name}
+                COMMAND ${CMAKE_COMMAND} -E rm -rf ${stage}
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${stage}
+                COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:saver-${name}> ${stage}/saver_${name}
+                COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/examples/saver-${name}/game.ini ${stage}/
+                COMMAND sh ${VECTORPIE_PACK} ${stage} ${CMAKE_BINARY_DIR}
+                VERBATIM)
+            add_dependencies(vps-${name} saver-${name})
+            add_dependencies(vps vps-${name})
+        endforeach()
         # Optional local sounds (see examples/hello/README.md): copied next to
         # the executable, where vp_asset_path finds them.
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples/hello/assets)
@@ -158,9 +191,10 @@ configure_package_config_file(cmake/VectorPieConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/VectorPieConfig.cmake
     INSTALL_DESTINATION ${VP_CMAKE_DIR}
     PATH_VARS CMAKE_INSTALL_BINDIR)
-# 0.x: a game asks for the minor version it was written for.
+# A game asks for the version it was written for; within 0.x the SDK only
+# adds, so any newer 0.x will do (SameMajorVersion).
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/VectorPieConfigVersion.cmake
-    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/VectorPieConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/VectorPieConfigVersion.cmake

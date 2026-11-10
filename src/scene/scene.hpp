@@ -83,6 +83,7 @@ private:
         uint8_t phase;     // 1: drawn one pixel to the right (odd phase)
         bool text;         // a character of CHRTBL
         int8_t glyph;
+        float fx, fy;      // where it truly is: the game's 16-bit position, in pixels
     };
 
     static void hookThunk(void* user, Machine& m, uint16_t pc);
@@ -99,9 +100,11 @@ private:
     std::vector<Item> items_;
     std::vector<SpriteObj> objs_;
     int16_t curObj_{-1};
+    float terrainFrac_{0};   // the terrain's sub-pixel scroll (BGOUT)
     std::vector<uint8_t> claimed_, left_;
     std::vector<std::vector<DPoint>> pen_;   // the Williams logo's pen strokes (LGOTAB), pixel centres
     bool penDecoded_{false};
+    float penX0_{1e9f}, penX1_{-1e9f}, penY0_{1e9f}, penY1_{-1e9f};   // its path's bounds
     SceneStats stats_;
 };
 

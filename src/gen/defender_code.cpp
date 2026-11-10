@@ -29670,6 +29670,7 @@ dispatch:
         c.b = 0x0F; logic8(c, c.b);
     case 0xC092: L_C092: // JSR    FLASHL
         if (c.cyc >= m.limit) { c.pc = 0xC092; return; }
+        c.pc = 0xC092; m.hook(0xC092);
         c.cyc += 8;
         ea = 0xCAC8;
         pushs16(m, c, 0xC095); goto L_CAC8;

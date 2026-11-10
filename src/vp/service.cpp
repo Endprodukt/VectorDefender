@@ -1,15 +1,16 @@
 // The service menu: see service.hpp. The structure is the Red Alarm port's
-// service.cpp (after the Open Hexagon and Tempest 2000 ports'); the free
-// bindings and their page after the Vectortron port's.
+// service.cpp (after the Open Hexagon and Tempest 2000 ports'); the
+// controls page as the Tempest 2000 port's, with its vpbind (vpbind.h).
 #include "service.hpp"
 
-#include "bind.hpp"
 #include "render.hpp"
+#include "vpbind.h"
 
 #include <SDL.h>
 #include <vectorpie/vp.h>
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace vp {
@@ -19,7 +20,7 @@ namespace {
 enum Row
 {
     R_CONTROLS, R_VIDEO, R_GAME, R_VOLUME, R_STEER, R_SAVE, R_CANCEL,
-    R_ACT, R_ACT_LAST = R_ACT + ACT_COUNT - 1, R_RESETALL,
+    R_FN, R_FN_LAST = R_FN + FN_COUNT - 1,
     R_VIEW, R_BSPRITES, R_BTERRAIN, R_BTEXT, R_BEFFECTS, R_SIZE, R_HZ,
     R_BONUS, R_SHIPS, R_COINAGE, R_FREE, R_DIFF, R_CEIL, R_RESTORE, R_AUDITS,
     R_RESETSCORES, R_RESETAUDITS, R_FACTORY,
@@ -33,7 +34,8 @@ const int video_rows[] = {R_VIEW, R_BSPRITES, R_BTERRAIN, R_BTEXT, R_BEFFECTS, R
 const int game_rows[] = {R_BONUS, R_SHIPS, R_COINAGE, R_FREE, R_DIFF, R_CEIL, R_RESTORE, R_AUDITS,
     R_RESETSCORES, R_RESETAUDITS, R_FACTORY, R_BACK};
 const int audit_rows[] = {R_BACK};
-int control_rows[ACT_COUNT + 3];
+int control_rows[FN_COUNT + 2];
+char standard[FN_COUNT][VPB_LENGTH];   // the functions' standard controls, as vpbind text
 
 template <typename T, int N>
 constexpr int count(const T (&)[N])
@@ -45,11 +47,10 @@ const char* row_name(int row)
 {
     static const char* const names[] = {
         "CONTROLS", "VIDEO", "GAME SETTINGS", "VOLUME", "STICK STEERING", "SAVE", "CANCEL"};
-    if(row < R_ACT) return names[row];
-    if(row <= R_ACT_LAST) return actName(static_cast<Action>(row - R_ACT));
+    if(row < R_FN) return names[row];
+    if(row <= R_FN_LAST) return functionNames[row - R_FN];
     switch(row)
     {
-        case R_RESETALL: return "RESET ALL TO THE CABINET";
         case R_VIEW: return "VIEW";
         case R_BSPRITES: return "SPRITE BRIGHTNESS";
         case R_BTERRAIN: return "TERRAIN BRIGHTNESS";
@@ -77,8 +78,9 @@ const char* row_hint(int row)
 {
     switch(row)
     {
+        case R_VOLUME: return "THE CABINET MENU'S SOUND VOLUME APPLIES FIRST. THIS IS THE GAME'S OWN, ON TOP";
         case R_STEER: return "STICK LEFT / RIGHT FLIES THE SHIP THAT WAY. THE REVERSE BUTTON STILL WORKS";
-        case R_VIEW: return "3D SHOWS THE SHIP AND THE ENEMIES AS MODELS WHILE A GAME IS ON. THE ATTRACT MODE STAYS CLASSIC";
+        case R_VIEW: return "3D: MODELS AND A TILTED FIELD. DYNAMIC: THE CAMERA TURNS THE WAY YOU FLY. 3D ENEMIES: CLASSIC, ONLY ENEMIES AND HUMANOIDS AS MODELS";
         case R_BONUS: return "0 MEANS NO BONUS SHIPS";
         case R_COINAGE: return "THE ORIGINAL'S COINAGE PRESETS. AS SET KEEPS THE BOARD'S OWN COIN VALUES";
         case R_DIFF: return "THE DIFFICULTY THE GAME STARTS WITH (GAME ADJUST 1)";
@@ -96,8 +98,8 @@ struct State
     Settings now;
     GameAdjust game;
     int page{PAGE_MAIN}, cursor{0}, row{R_CONTROLS};
-    int col{0};                // controls: 0 input 1, 1 input 2, 2 clear
-    bool capturing{false};
+    vpb_layout lay{};          // laying out a function's controls
+    int held{0};               // updates left / right is held (repeat)
     std::string note;
     int noteTime{0};
     bool key{false};
@@ -149,9 +151,19 @@ bool* row_switch(int row)
     return nullptr;
 }
 
-bool is_action(int row)
+bool is_fn(int row)
 {
-    return row >= R_ACT && row <= R_ACT_LAST;
+    return row >= R_FN && row <= R_FN_LAST;
+}
+
+constexpr int REPEAT_DELAY = 24;
+constexpr int REPEAT_EVERY = 3;
+
+bool repeated(bool held)
+{
+    if(!held) return false;
+    if(S.held == 1) return true;
+    return S.held > REPEAT_DELAY && (S.held - REPEAT_DELAY) % REPEAT_EVERY == 0;
 }
 
 void change(int row, int steps)
@@ -160,7 +172,7 @@ void change(int row, int steps)
     if(!steps) return;
     if(bool* b = row_switch(row)) { *b = !*b; return; }
     if(row == R_STEER) { S.now.stickSteer = (S.now.stickSteer + (steps > 0 ? 1 : 2)) % 3; return; }
-    if(row == R_VIEW) { S.now.view = (S.now.view + (steps > 0 ? 1 : 2)) % 3; return; }
+    if(row == R_VIEW) { S.now.view = (S.now.view + (steps > 0 ? 1 : 3)) % 4; return; }
     if(row == R_COINAGE) { S.game.coinage = (S.game.coinage + (steps > 0 ? 1 : 8)) % 9; return; }
     if(row == R_HZ)
     {
@@ -182,7 +194,7 @@ void turn_to(int page)
     int n;
     S.page = page;
     S.cursor = 0;
-    S.col = 0;
+    vpb_layout_moved(&S.lay);
     S.row = page_rows(&n)[0];
 }
 
@@ -214,8 +226,8 @@ const char* page_title()
 
 bool serviceHotkey()
 {
-    const Uint8* keys = SDL_GetKeyboardState(nullptr);
-    const bool key = keys && keys[SDL_SCANCODE_F2];
+    vpb_update();   // the controls as they are, for this step (vpbind.h)
+    const bool key = vpb_key_held(SDL_SCANCODE_F2) != 0;
     const bool hit = key && !S.key;
     S.key = key;
     return hit;
@@ -230,10 +242,14 @@ void serviceOpen(const Settings& now, const GameAdjust& game)
     S.game = game;
     S.row = main_rows[0];
     control_rows[0] = R_STEER;
-    for(int i = 0; i < ACT_COUNT; ++i) control_rows[i + 1] = R_ACT + i;
-    control_rows[ACT_COUNT + 1] = R_RESETALL;
-    control_rows[ACT_COUNT + 2] = R_BACK;
-    bindSnapshot();
+    for(int i = 0; i < FN_COUNT; ++i)
+    {
+        control_rows[i + 1] = R_FN + i;
+        std::snprintf(standard[i], sizeof standard[i], "%s", functionStandard[i]);
+        vpb_normalize(standard[i], sizeof standard[i]);
+        vpb_normalize(S.now.controls[i], sizeof S.now.controls[i]);
+    }
+    control_rows[FN_COUNT + 1] = R_BACK;
 }
 
 const Settings& serviceGet()
@@ -253,63 +269,57 @@ int serviceUpdate(vp_input* in, bool hotkey)
 
     ++S.frames;
     if(S.noteTime > 0) --S.noteTime;
-    if(hotkey)
+    if(hotkey) return SERVICE_CANCELLED;   // nothing taken over, the controls neither
+    if(S.lay.capturing)
     {
-        bindRestore();
-        return SERVICE_CANCELLED;
-    }
-    if(S.capturing)
-    {
-        const int r = bindCapture();
-        if(r != 0) S.capturing = false;
-        if(r < 0) note("NOTHING PRESSED - LEFT AS IT WAS");
+        const int f = S.row - R_FN;
+        vpb_layout_step(&S.lay, in, S.now.controls[f], sizeof S.now.controls[f], standard[f]);
         return SERVICE_OPEN;
     }
 
-    MenuKeys k{};
-    bindMenu(in, k);
-    if(S.page == PAGE_CONTROLS && is_action(S.row))
+    // the menu's own controls only, whatever a function has laid out
+    const bool accept = vpb_menu_confirm(in) != 0;
+    int left = vpb_menu_left(), right = vpb_menu_right();
+    if(is_fn(S.row) && (vpb_key_pressed(SDL_SCANCODE_DELETE) || vpb_key_pressed(SDL_SCANCODE_KP_PERIOD)))
     {
-        if(k.left && S.col > 0) --S.col;
-        if(k.right && S.col < 2) ++S.col;
+        const int f = S.row - R_FN;
+        vpb_layout_standard(&S.lay, S.now.controls[f], sizeof S.now.controls[f], standard[f]);
+        return SERVICE_OPEN;
     }
-    else if(k.left || k.right) change(S.row, k.right ? 1 : -1);
+    vpb_layout_filter(&S.lay, &left, &right);
+    S.held = left != right ? S.held + 1 : 0;
+    if(is_fn(S.row))
+    {
+        // left / right: none, or the standard controls (once a press)
+        if(S.held == 1)
+        {
+            const int f = S.row - R_FN;
+            vpb_layout_toggle(&S.lay, S.now.controls[f], sizeof S.now.controls[f], standard[f]);
+        }
+    }
+    else if(repeated(left != right)) change(S.row, right ? 1 : -1);
 
-    if(k.down && S.cursor < n - 1) ++S.cursor;
-    if(k.up && S.cursor > 0) --S.cursor;
-    S.row = rows[S.cursor];
-    if(!k.ok) return SERVICE_OPEN;
+    int steps = 0;
+    if(vpb_menu_down()) ++steps;
+    if(vpb_menu_up()) --steps;
+    if(steps)
+    {
+        S.cursor += steps;
+        if(S.cursor < 0) S.cursor = 0;
+        if(S.cursor >= n) S.cursor = n - 1;
+        S.row = rows[S.cursor];
+        vpb_layout_moved(&S.lay);
+    }
+    if(!accept) return SERVICE_OPEN;
 
     if(S.row == R_SAVE) return SERVICE_SAVED;
-    if(S.row == R_CANCEL)
-    {
-        bindRestore();
-        return SERVICE_CANCELLED;
-    }
+    if(S.row == R_CANCEL) return SERVICE_CANCELLED;
     if(S.row == R_CONTROLS) turn_to(PAGE_CONTROLS);
     else if(S.row == R_VIDEO) turn_to(PAGE_VIDEO);
     else if(S.row == R_GAME) turn_to(PAGE_GAME);
     else if(S.row == R_AUDITS) turn_to(PAGE_AUDITS);
     else if(S.row == R_BACK) turn_to(S.page == PAGE_AUDITS ? PAGE_GAME : PAGE_MAIN);
-    else if(S.row == R_RESETALL)
-    {
-        bindClearAll();
-        note("ALL CONTROLS AS THE CABINET'S");
-    }
-    else if(is_action(S.row))
-    {
-        const Action a = static_cast<Action>(S.row - R_ACT);
-        if(S.col == 2)
-        {
-            bindClear(a);
-            note("BACK TO THE CABINET'S");
-        }
-        else
-        {
-            bindCaptureBegin(a, S.col);
-            S.capturing = true;
-        }
-    }
+    else if(is_fn(S.row)) vpb_layout_begin(&S.lay, S.now.controls[S.row - R_FN]);
     else change(S.row, 1);
     return SERVICE_OPEN;
 }
@@ -324,37 +334,35 @@ void serviceDraw(vp_dvg* d)
 
     if(S.page == PAGE_CONTROLS)
     {
-        static const char* const COLS[3] = {"INPUT 1", "INPUT 2", "CLEAR"};
-        static const float CX[3] = {150.f, 248.f, 340.f};
-        for(int c = 0; c < 3; ++c) ui::text(d, COLS[c], CX[c], 28.f, 4.f, VP_TEXT_LEFT, GREEN);
         const float step = 160.f / static_cast<float>(n);
+        const float h = n > 10 ? 4.6f : 5.f, vx = 150.f;
         for(int i = 0; i < n; ++i)
         {
             const int row = rows[i];
             const bool here = row == S.row;
-            const float y = 40.f + step * static_cast<float>(i);
-            const float h = 4.2f;
+            const float y = 36.f + step * static_cast<float>(i);
+            const Rgb c = here ? WHITE : BLUE;
             if(here) ui::text(d, ">", 14.f, y, h, VP_TEXT_RIGHT, YELLOW);
-            ui::text(d, row_name(row), 18.f, y, h, VP_TEXT_LEFT, here ? WHITE : BLUE);
+            ui::text(d, row_name(row), 18.f, y, h, VP_TEXT_LEFT, c);
             if(row == R_STEER)
             {
                 static const char* const steer[3] = {"OFF", "TURN THAT WAY AND THRUST", "TURN THAT WAY"};
-                ui::text(d, steer[S.now.stickSteer], CX[0], y, h * 0.85f, VP_TEXT_LEFT, here ? WHITE : BLUE);
+                ui::text(d, steer[S.now.stickSteer], vx, y, h, VP_TEXT_LEFT, c);
             }
-            if(!is_action(row)) continue;
-            const Action a = static_cast<Action>(row - R_ACT);
-            for(int c = 0; c < 3; ++c)
+            if(!is_fn(row)) continue;
+            if(here && S.lay.capturing)
             {
-                const bool on = here && S.col == c;
-                Rgb col = on ? WHITE : BLUE;
-                std::string t = c == 2 ? (on ? "CLEAR" : "") : bindDescribe(a, c);
-                if(on && S.capturing)
-                {
-                    col = YELLOW;
-                    t = (S.frames / 15) & 1 ? "PRESS A CONTROL" : "";
-                }
-                if(!t.empty()) ui::text(d, t.c_str(), CX[c], y, h * 0.85f, VP_TEXT_LEFT, col);
+                if((S.frames / 15) & 1) ui::text(d, "PRESS A CONTROL", vx, y, h, VP_TEXT_LEFT, YELLOW);
+                continue;
             }
+            // all its controls; smaller when they would not fit
+            char spelled[256];
+            vpb_spelled(S.now.controls[row - R_FN], spelled, sizeof spelled);
+            float size = h;
+            const float room = 384.f - vx - 6.f;
+            const float len = static_cast<float>(std::strlen(spelled));
+            if(len * size * 1.6f > room) size = room / (len * 1.6f);
+            ui::text(d, spelled, vx, y, size, VP_TEXT_LEFT, c);
         }
     }
     else if(S.page == PAGE_AUDITS)
@@ -391,7 +399,7 @@ void serviceDraw(vp_dvg* d)
             if(row == R_CONTROLS || row == R_VIDEO || row == R_GAME || row == R_AUDITS) v = "OPEN";
             else if(row == R_VIEW)
             {
-                static const char* const views[3] = {"CLASSIC", "3D", "3D DYNAMIC"};
+                static const char* const views[4] = {"CLASSIC", "3D", "3D DYNAMIC", "3D ENEMIES"};
                 v = views[S.now.view];
             }
             else if(row == R_COINAGE) v = coinageNames[S.game.coinage];
@@ -415,14 +423,21 @@ void serviceDraw(vp_dvg* d)
         }
     }
 
-    // the foot: a note, the capture, the row's own words, or the keys
-    const char* foot = nullptr;
+    // the foot: what vpbind says, its help on a function's row, a note, the
+    // row's own words, or the keys
+    if(const char* said = vpb_layout_said(&S.lay)) ui::text(d, said, 192.f, 208.f, 4.5f, VP_TEXT_CENTER, RED);
+    if(S.lay.capturing || is_fn(S.row))
+    {
+        const char *one = nullptr, *two = nullptr;
+        vpb_layout_help(&S.lay, &one, &two);
+        if(one) ui::text(d, one, 192.f, 216.f, 4.f, VP_TEXT_CENTER, GREEN);
+        if(two) ui::text(d, two, 192.f, 223.f, 4.f, VP_TEXT_CENTER, GREEN);
+        return;
+    }
+    const char* foot = "UP, DOWN - ROW   LEFT, RIGHT - SET   START 1 - TAKE   F2 - LEAVE WITHOUT SAVING";
     Rgb footColor = GREEN;
     if(S.noteTime > 0) { foot = S.note.c_str(); footColor = YELLOW; }
-    else if(S.capturing) foot = "ANY KEY, BUTTON OR STICK - 5 SECONDS";
-    else if(const char* h = row_hint(S.row)) foot = h;
-    else if(S.page == PAGE_CONTROLS) foot = "LEFT / RIGHT: INPUT 1, INPUT 2, CLEAR. F2 - LEAVE WITHOUT SAVING";
-    else foot = "F2 - LEAVE WITHOUT SAVING";
+    else if(const char* hint = row_hint(S.row)) foot = hint;
     ui::textWrapped(d, foot, 192.f, 222.f, 4.f, 330.f, footColor);
 }
 

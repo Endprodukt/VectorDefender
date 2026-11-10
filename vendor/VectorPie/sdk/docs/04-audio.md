@@ -24,6 +24,10 @@ vp_voice_stop(a, music, 1.5f);             /* 1.5 s fade out */
   play: a long track costs no memory. A background thread reads ahead about a
   second and a half; if it ever falls behind, the stream goes quiet briefly and
   `vp_audio_stats.underruns` counts it.
+* **Music from memory** (`vp_music_play_mem`): an Ogg Vorbis file the game
+  already holds, unpacked from its own archive, say, so its tracks are not
+  loose files a player can copy. The SDK keeps its own copy while it plays
+  (the caller may free its buffer at once), decoded as it streams.
 
 Files are **WAV** (PCM 8, 16, 24 or 32-bit, or 32-bit float; compressed WAV
 is refused with a message) or **Ogg Vorbis** (`.ogg`, about a tenth of the
@@ -31,6 +35,27 @@ size: the choice for music). The SDK tells them apart by their contents, not
 their names. Mono or stereo (Ogg surround is folded to stereo), any sample
 rate (converted as it plays). An effect loaded from Ogg is decoded once, at
 load; Ogg music is decoded as it streams, on the feeder thread.
+
+## The cabinet's volumes
+
+On the cabinet, the menu's MUSIC VOLUME and SOUND VOLUME apply to every SDK
+game too: the SDK reads them from the menu's settings
+(`/usr/local/share/advance/vector_pie_menu.cfg`, `[audio]` `music_volume` and
+`effects_volume`) when audio opens, and mixes music (`vp_music_play`, the
+streams) and effects (`vp_sound_play`) at those levels, on top of the volumes
+the game asks for. Its MASTER VOLUME is the system's own. On a PC (no menu)
+both are full.
+
+## What was just heard
+
+`vp_audio_recent(audio, mono, count)` copies the latest `count` frames of
+the mix (up to `VP_AUDIO_RECENT`, 4096), after the master volume, as mono
+samples -1..1, oldest first, and returns the device's sample rate. For
+pictures of the sound: a spectrum, a scope, a pulse on the bass.
+`vp_audio_recent_stereo(audio, left, right, count)` copies the same with
+left and right apart: VU meters, an XY scope.
+`vp_music_feed.h` has a ready spectrum analysis to run on them
+(`vp_music_analyze`, from left and right).
 
 ## Voices
 

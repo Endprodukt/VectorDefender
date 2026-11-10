@@ -4,10 +4,13 @@
 
 #include <SDL.h>
 
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <string>
 
 struct vp_game {
     const vp_game_desc *desc;
@@ -31,11 +34,11 @@ void onSignal(int)
 // the game slows down instead of freezing to catch up.
 const int MAX_STEPS_PER_FRAME = 5;
 
-// --dvg [PORT], --window, --windowed, --vertical. Returns false on anything
+// --dvg [PORT], --window, --windowed, --maximized, --vertical. Returns false on anything
 // else (the usage is printed).
 bool parseArgs(int argc, char **argv, const char *title, vp_dvg_options *o, const char **reason)
 {
-    int forced = 0, fullscreen = 0, vertical = 0;
+    int forced = 0, fullscreen = 0, maximized = 0, vertical = 0;
     const char *port = nullptr;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--dvg")) {
@@ -47,12 +50,16 @@ bool parseArgs(int argc, char **argv, const char *title, vp_dvg_options *o, cons
         } else if (!strcmp(argv[i], "--windowed")) {
             forced = VP_DVG_OUTPUT_WINDOW;
             fullscreen = 0;
+        } else if (!strcmp(argv[i], "--maximized")) {
+            forced = VP_DVG_OUTPUT_WINDOW;
+            fullscreen = 0;
+            maximized = 1;
         } else if (!strcmp(argv[i], "--vertical")) {
             vertical = 1;
         } else if (argv[i][0] != '-') {
             // Not an option: the game's own argument (a file to load...).
         } else {
-            fprintf(stderr, "usage: %s [--dvg [PORT] | --window | --windowed] [--vertical]\n",
+            fprintf(stderr, "usage: %s [--dvg [PORT] | --window | --windowed | --maximized] [--vertical]\n",
                     argc > 0 ? argv[0] : "game");
             return false;
         }
@@ -62,6 +69,7 @@ bool parseArgs(int argc, char **argv, const char *title, vp_dvg_options *o, cons
         o->output = (vp_dvg_output)forced;
         o->port = port;
         o->fullscreen = fullscreen;
+        o->maximized = maximized;
         o->window_title = title;
         *reason = "command line";
     } else {
@@ -112,12 +120,59 @@ struct FrameStats {
     }
 };
 
+// A control used: a button, a direction, a coin, the stick or the spinner
+// moved well past rest. START 2 is left out (the next track).
+bool saverWoken(vp_input *in)
+{
+    static const char *const actions[] = {
+        "p1_up", "p1_down", "p1_left", "p1_right", "p2_up", "p2_down", "p2_left", "p2_right",
+        "p1_button1", "p1_button2", "p1_button3", "p1_button4", "p1_button5", "p1_button6",
+        "p2_button1", "p2_button2", "p2_button3", "p2_button4", "p2_button5", "p2_button6",
+        "start1", "coin1", "coin2", "ui_cancel",
+    };
+    for (const char *a : actions)
+        if (vp_input_pressed(in, a)) return true;
+    static const char *const axes[] = { "p1_stickx", "p1_sticky", "p2_stickx", "p2_sticky" };
+    for (const char *a : axes)
+        if (vp_input_axis(in, a) > 0.5f || vp_input_axis(in, a) < -0.5f) return true;
+    static const char *const counts[] = { "p1_dialx", "p1_trackballx", "p1_trackbally" };
+    for (const char *a : counts) {
+        int d = vp_input_delta(in, a);
+        if (d > 20 || d < -20) return true;
+    }
+    return false;
+}
+
 double msSince(uint64_t counter)
 {
     return (double)(SDL_GetPerformanceCounter() - counter) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 }
 
 }  // namespace
+
+std::string vp_manifest_value(const char *key, const char *section)
+{
+    char path[1100];
+    std::ifstream f(vp_asset_path("game.ini", path, sizeof path));
+    std::string line, in;                   // in: the section the line is in ("": none yet)
+    const std::string want = section ? section : "";
+    auto trim = [](const std::string &s) {
+        size_t b = s.find_first_not_of(" \t\r"), e = s.find_last_not_of(" \t\r");
+        return b == std::string::npos ? std::string() : s.substr(b, e - b + 1);
+    };
+    while (std::getline(f, line)) {
+        size_t c = line.find_first_of(";#");
+        if (c != std::string::npos) line.erase(c);
+        line = trim(line);
+        if (line.size() >= 2 && line.front() == '[' && line.back() == ']') {
+            in = trim(line.substr(1, line.size() - 2));
+            continue;
+        }
+        size_t eq = line.find('=');
+        if (in == want && eq != std::string::npos && trim(line.substr(0, eq)) == key) return trim(line.substr(eq + 1));
+    }
+    return {};
+}
 
 int vp_run(const vp_game_desc *desc, int argc, char **argv)
 {
@@ -154,10 +209,34 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
         fprintf(stderr, "%s: no sound: %s\n", title, vp_last_error());
         g.audio = nullptr;      // the game runs silent
     }
-    if (vp_dvg_get_output(g.out) == VP_DVG_OUTPUT_BOARD && desc->frame_hz_board > 0)
-        frameHz = desc->frame_hz_board;
-    // On the board, the cabinet's HDMI screen shows the game's marquee.
-    if (vp_dvg_get_output(g.out) == VP_DVG_OUTPUT_BOARD)
+    // A screensaver's music when it runs without the cabinet's menu: its
+    // first non-option argument (vp_saver.h).
+    const char *musicArg = nullptr;
+    for (int i = 1; i < argc && !musicArg; i++) {
+        if (!strcmp(argv[i], "--dvg") && i + 1 < argc && argv[i + 1][0] != '-') { i++; continue; }
+        if (argv[i][0] != '-') musicArg = argv[i];
+    }
+    vp_saver_attach(g.audio, musicArg);
+    const bool saver = vp_saver_active() != 0;
+    // Under the cabinet's menu (its music feed given) the menu reads the
+    // controls: it wakes the cabinet and skips tracks itself.
+    const bool menuControls = saver && getenv("VP_MUSIC_FEED") && *getenv("VP_MUSIC_FEED");
+    // A screensaver runs for hours: its whole picture, a little smaller,
+    // wanders slowly round the screen and breathes in size, so no line stays
+    // on the same spot of the tube. Slow, uneven periods (the path never
+    // repeats exactly), from a different place each time.
+    const double wanderPhase = saver ? (double)(SDL_GetPerformanceCounter() % 6283) / 1000.0 : 0;
+    if (vp_dvg_get_output(g.out) == VP_DVG_OUTPUT_BOARD) {
+        if (desc->frame_hz_board > 0) frameHz = desc->frame_hz_board;
+        // game.ini can set it per board, without rebuilding the game: its
+        // [dvg] (the USB-DVG) or [beamforge] section's frame_hz.
+        const bool beamforge = vp_dvg_hardware(g.out) == VP_HW_BEAMFORGE;
+        int hz = atoi(vp_manifest_value("frame_hz", beamforge ? "beamforge" : "dvg").c_str());
+        if (hz >= 10 && hz <= 120) frameHz = hz;
+    }
+    // On the board, the cabinet's HDMI screen shows the game's marquee; a
+    // screensaver leaves it to the menu (its screensaver picture stays).
+    if (vp_dvg_get_output(g.out) == VP_DVG_OUTPUT_BOARD && !saver)
         vp_marquee_auto();
     printf("%s: VectorPie SDK %s, %s%s%s (%s), %d joystick(s), %s\n", title, vp_version(),
            vp_hardware_name(vp_dvg_hardware(g.out)),
@@ -177,9 +256,16 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
         g.quit = true;
     }
 
-    const uint64_t frameMs = (uint64_t)(1000 / frameHz);
+    // Vector Defender addition: the frames paced in fractions of a
+    // millisecond (1000 / 60 as a whole number made 62.5 frames a second
+    // for 60 updates: every 25th frame without one, the picture judders),
+    // and with as many updates a second as frames: exactly one update a
+    // frame (lockstep), so moving things step evenly.
+    const double frameMs = 1000.0 / frameHz;
+    const bool lockstep = updateHz == frameHz;
+    const double perMs = (double)SDL_GetPerformanceFrequency() / 1000.0;
     uint64_t last = vp_ticks_ms();
-    uint64_t nextFrame = last;
+    double nextFrame = (double)SDL_GetPerformanceCounter() / perMs;
     double acc = 0.0;
 
     FrameStats fs;
@@ -197,6 +283,7 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
         uint64_t now = vp_ticks_ms();
         acc += (now - last) / 1000.0;
         last = now;
+        if (lockstep) acc = dt;     // one update, this frame
         int steps = 0;
         while (acc >= dt && !g.quit) {
             if (steps == MAX_STEPS_PER_FRAME) {
@@ -208,6 +295,17 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
                 g.quit = true;
                 break;
             }
+            // The cabinet's screensaver: any control wakes the cabinet (the
+            // menu comes back), START 2 plays the next track. Not in the
+            // first moment: the control that was let go as it started.
+            if (saver && !menuControls && g.time > 0.6) {
+                if (vp_input_pressed(g.in, "start2")) {
+                    vp_saver_skip();
+                } else if (saverWoken(g.in)) {
+                    g.quit = true;
+                    break;
+                }
+            }
             if (desc->update) desc->update(&g, (float)dt);
             g.time += dt;
             acc -= dt;
@@ -217,6 +315,13 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
 
         uint64_t t0 = SDL_GetPerformanceCounter();
         vp_dvg_begin_frame(g.out);
+        if (saver) {
+            const double t = g.time, two_pi = 6.283185307;
+            float scale = (float)(0.90 + 0.04 * sin(two_pi * t / 89 + wanderPhase));
+            float room = (1 - scale) / 2 * VP_DVG_COORD_MAX * 0.95f;   /* never off the screen */
+            vp_dvg_set_view(g.out, scale, room * (float)sin(two_pi * t / 47 + wanderPhase * 2),
+                            room * (float)sin(two_pi * t / 67 + wanderPhase * 3));
+        }
         if (desc->draw) desc->draw(&g, g.out);
         double drawMs = msSince(t0);
         uint64_t t1 = SDL_GetPerformanceCounter();
@@ -234,12 +339,15 @@ int vp_run(const vp_game_desc *desc, int argc, char **argv)
         }
 
         nextFrame += frameMs;
-        now = vp_ticks_ms();
-        if (nextFrame > now) vp_sleep_ms((int)(nextFrame - now));
-        else nextFrame = now;   // running late: do not try to catch up frames
+        double nowMs = (double)SDL_GetPerformanceCounter() / perMs;
+        if (nextFrame > nowMs + 1.0) vp_sleep_ms((int)(nextFrame - nowMs - 1.0));
+        nowMs = (double)SDL_GetPerformanceCounter() / perMs;
+        while (nowMs < nextFrame) nowMs = (double)SDL_GetPerformanceCounter() / perMs;   // the last bit exact
+        if (nowMs > nextFrame + frameMs) nextFrame = nowMs;   // running late: do not try to catch up frames
     }
 
     if (desc->shutdown) desc->shutdown(&g);
+    vp_saver_detach();
     vp_lamps_close();           // the START lamps back as they were
     vp_marquee_clear();
     vp_audio_close(g.audio);

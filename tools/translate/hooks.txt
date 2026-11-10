@@ -17,3 +17,6 @@ main CWRIT
 
 # The game starts (after the power-on tests): SKIP POWER-ON TEST waits for it.
 main SINIT
+
+# The terrain is drawn: BGL then gives its sub-pixel offset.
+blk71 BGOUT

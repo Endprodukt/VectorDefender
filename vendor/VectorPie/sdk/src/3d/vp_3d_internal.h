@@ -4,14 +4,31 @@
 #include "../core/vp_internal.h"
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+// A texture: strokes in its square (vp_texture.cpp).
+struct vp3d_texture {
+    struct Stroke { float u0, v0, u1, v1; int32_t rgb; };   // rgb -1: the face's color
+    std::vector<Stroke> strokes;
+    int32_t color = -1;                         // for the strokes being added
+    float dim = 0.5f;                           // the face-colored strokes' brightness
+};
 
 struct vp3d_mesh {
     std::vector<vp_vec3> verts;
     std::vector<std::vector<int>> faces;
     std::vector<std::pair<int, int>> lines;    // lone lines (OBJ "l", vp3d_mesh_line)
+    std::vector<int32_t> faceColor;            // per face: 0xRRGGBB, or -1 (the current color)
+    std::vector<int> faceMaterial;             // per face: index in materials, or -1
+    std::vector<std::string> materials;        // OBJ material names (usemtl)
+    bool hasColors = false;                    // some face has a color
+    std::vector<std::vector<float>> faceUV;    // per face: u,v per corner (OBJ vt, vp3d_mesh_face_uv), or empty
+    std::vector<const vp3d_texture *> faceTexture;  // per face, or nullptr
+    bool textured = false;                     // some face has a texture
+    float texWorld = 0.0f;                     // > 0: world mapping, a tile this wide
     // Built by vp3d_mesh_finish:
     std::vector<std::pair<int, int>> edges;    // unique, low index first
     std::vector<std::vector<int>> strokes;     // vertex paths covering every edge once
@@ -33,6 +50,16 @@ struct vp3d_mesh {
     std::vector<int> triFace;                  // the face each triangle belongs to
 };
 
+// An edge's color: its first face's, else its second's; -1: the current color.
+inline int32_t vp3d_edge_color(const vp3d_mesh *m, int e)
+{
+    if (e < 0) return -1;
+    int f0 = m->edgeFace0[e], f1 = m->edgeFace1[e];
+    if (f0 >= 0 && m->faceColor[f0] >= 0) return m->faceColor[f0];
+    if (f1 >= 0 && m->faceColor[f1] >= 0) return m->faceColor[f1];
+    return -1;
+}
+
 inline uint64_t vp3d_edge_key(int a, int b)
 {
     int lo = a < b ? a : b, hi = a < b ? b : a;
@@ -48,6 +75,13 @@ void vp3d_visible(const vp3d_mesh *m, const vp_xf &toCam, vp3d_mode mode,
 // few as the shape allows: walks start where an odd number of edges is left.
 void vp3d_build_strokes(int vertexCount, const std::vector<std::pair<int, int>> &edges,
                         const std::vector<int> &subset, std::vector<std::vector<int>> &out);
+
+// Face `face`'s texture strokes, clipped to it, in camera space (cam: the
+// mesh's vertices there; place: the mesh's placement, for world mapping).
+// emit gets each piece, its color (-1: the face's) and the dim for that.
+void vp3d_texture_segments(const vp3d_mesh *m, int face, const vp_xf *place, const vp_vec3 *cam,
+                           void (*emit)(void *user, vp_vec3 a, vp_vec3 b, int32_t rgb, float dim),
+                           void *user);
 
 // Recompute edgeCrease from the face normals and creaseDeg.
 void vp3d_update_creases(vp3d_mesh *m);

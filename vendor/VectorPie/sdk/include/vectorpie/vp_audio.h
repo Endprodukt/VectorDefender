@@ -30,6 +30,7 @@
 #ifndef VECTORPIE_VP_AUDIO_H
 #define VECTORPIE_VP_AUDIO_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "vp_error.h"
 
@@ -69,16 +70,27 @@ vp_voice vp_sound_play(vp_audio *a, vp_sound *s, float volume, float pitch, int 
 vp_voice vp_music_play(vp_audio *a, const char *wav_path, float volume, int loop,
                        float fade_in_s);
 
-/* Pushed sound (Red Alarm addition, not in the upstream SDK) ---------------
- * A voice that plays what the program hands it while it runs, e.g. the sound
- * of an emulated machine: open it once, then push stereo float frames
- * (interleaved, -1..1) as they are made. vp_pcm_queued says how many pushed
- * frames still wait to be played, so the program can keep the delay small.
- * Frames that do not fit (about 1.4 s) are dropped; when the queue runs dry
- * the voice plays silence and goes on. */
-vp_voice vp_pcm_play(vp_audio *a, int sample_rate, float volume);
-int      vp_pcm_push(vp_audio *a, vp_voice v, const float *stereo, int frames);
-int      vp_pcm_queued(vp_audio *a, vp_voice v);
+/* The same, from an Ogg Vorbis file already in memory (unpacked from the
+ * game's own archive, say): the data is copied, so it may be freed at once.
+ * Ogg only; the copy stays in memory while it plays (an Ogg is about a
+ * tenth of the WAV). */
+vp_voice vp_music_play_mem(vp_audio *a, const void *data, size_t size, float volume, int loop,
+                           float fade_in_s);
+
+/* A game's own stream: samples the game makes as it runs (an emulated sound
+ * chip, a synthesizer), stereo float frames (-1..1, interleaved) at `rate`,
+ * resampled to the device. Returns its voice, or 0 (all voices busy). It plays
+ * what has been written and is silent when it runs dry; it ends with
+ * vp_voice_stop. Keep about 50-100 ms written ahead (vp_stream_queued). */
+vp_voice vp_stream_play(vp_audio *a, int rate, float volume);
+/* Frames written; returns how many fit (about a second can wait). */
+int vp_stream_write(vp_audio *a, vp_voice v, const float *frames, int count);
+/* Frames written and not played yet. */
+int vp_stream_queued(vp_audio *a, vp_voice v);
+/* Vector Defender addition, not in the upstream SDK: the stream is the
+ * game's sound effects (an emulated sound board), so on the cabinet it plays
+ * at the menu's SOUND VOLUME instead of its MUSIC VOLUME. */
+void vp_stream_set_effects(vp_audio *a, vp_voice v);
 
 /* Any voice ----------------------------------------------------------------- */
 
@@ -98,6 +110,15 @@ typedef struct vp_audio_stats {
     int      sample_rate;  /* the device's */
 } vp_audio_stats;
 void vp_audio_get_stats(vp_audio *a, vp_audio_stats *stats);
+
+/* What was just heard: the latest `count` frames of the mix (after the
+ * master volume), as mono samples -1..1, oldest first, into mono (up to
+ * VP_AUDIO_RECENT). Returns the device's sample rate, or 0 (no audio). For
+ * pictures of the sound: a spectrum, a scope, a pulse on the bass. */
+#define VP_AUDIO_RECENT 4096
+int vp_audio_recent(vp_audio *a, float *mono, int count);
+/* The same, left and right apart: for VU meters, an XY scope. */
+int vp_audio_recent_stereo(vp_audio *a, float *left, float *right, int count);
 
 #ifdef __cplusplus
 }

@@ -4,18 +4,21 @@
 
 ## Overview
 
-VectorPie is a Raspberry Pi image for the USB-DVG vector generator board. It boots straight into a game menu driven entirely from the arcade controls — no keyboard, mouse, or desktop. It also works without a USB-DVG, on an HDMI monitor.
+VectorPie is a Raspberry Pi image for the BeamForge and USB-DVG vector generator boards. It boots straight into a game menu driven entirely from the arcade controls — no keyboard, mouse, or desktop.
 
-- **Headless** — runs at boot, no monitor or desktop needed on the Pi
-- **Marquee display** — the HDMI output shows the artwork for the highlighted game
-- **USB-DVG** — drives a real vector monitor; HDMI works without it
-- **One input mapping** — configured once in AdvanceMAME, used by the menu and every game
-- **High scores** — read from the MAME save files and shown in the hint bar
-- **Game packages** — games made with the VectorPie SDK install from the menu, from a USB drive or over the network
-- **LED lighting** — each game lights its own controls in its own colors, with a voice-guided tour and beat-synced light shows
-- **Wi-Fi** — set up from the menu
-- **Remote access** — SSH and a Windows network share
-- **Updates from the menu** — with automatic rollback if the new version fails to boot
+- **Headless** — VectorPie starts at power-on, straight into the game menu: no monitor, keyboard or desktop needed on the Pi.
+- **Marquee display** — VectorPie turns an HDMI screen into a live marquee, showing the artwork of the game you're on.
+- **BeamForge and USB-DVG** — VectorPie drives a real vector monitor. With BeamForge, games draw about 20 million points a second for a richer, steadier picture.
+- **Board setup from the menu** — VectorPie allows the user to update and configure the BeamForge or USB-DVG from the settings menu. No need to push buttons on a board.
+- **High scores** — VectorPie shows each game's high scores right in the menu, so you know the score to beat.
+- **App store** — VectorPie can install new games and screensaver apps with a few presses, online from the VectorPie app store or from a USB drive. The apps are made mostly by the community.
+- **LED lighting** — VectorPie can light each game's controls in its own colors, walk you through them with a voice guide, and play light shows to the beat of the music.
+- **Background music** — VectorPie can play a theme or your own playlist while you browse the games, with DJ breaks between tracks.
+- **Beat maps** — VectorPie can analyze your music tracks and find their beats and downbeats, so the light shows and the screensaver apps move right on the rhythm of the music.
+- **Screensavers** — VectorPie can protect the tube with its own screensaver, or with screensaver apps from the app store that dance to the music.
+- **Wi-Fi** — VectorPie connects to Wi-Fi from the menu, with the cabinet controls.
+- **Remote access** — VectorPie lets you reach the Pi from a PC, with SSH and a Windows network share.
+- **Updates from the menu** — VectorPie updates itself over the internet, and goes back to the previous version if the new one fails to boot.
 
 Runs on the **Raspberry Pi 4** and **Raspberry Pi 5**.
 
@@ -23,22 +26,37 @@ Runs on the **Raspberry Pi 4** and **Raspberry Pi 5**.
 
 ## Supported Hardware
 
+VectorPie runs on a Raspberry Pi 4 or 5 and drives a vector monitor through a BeamForge or USB-DVG board.
+
 - Raspberry Pi 4 or 5, 1 GB or more. Raspberry Pi 5 recommended for better performance.
-- 32 GB SD card or larger. (Pi 5) M.2 NVMe HAT and M.2 NVMe SSD recommended for performance and reliability.
+- **An SSD, strongly recommended:** on a Pi 5, an M.2 NVMe SSD on an M.2 NVMe HAT. An SSD is much more reliable than an SD card for a cabinet that runs for hours every day, and faster too. Choose a drive known to work with the Raspberry Pi 5: not every NVMe SSD does.
+- Or a 32 GB SD card or larger.
+
+Installation guides:
+
+- [BeamForge](docs/beamforge-installation.md)
+- [Space Duel adapter board](docs/space-duel-adapter-installation.md)
+- [Asteroids adapter board](docs/asteroids-adapter-installation.md)
 
 ---
 
 ## Download & Installation
 
+VectorPie is installed by writing its image to an SSD (recommended) or an SD card. Once installed, VectorPie and the vector board's firmware are updated from the settings menu, without reflashing.
+
 ### VectorPie Image
 
-1. Download the image (about 2 GB): [VectorPie Image]https://drive.google.com/file/d/1d8pya3SGa75k_M-txAPV6jbEHkG0yymR/view?usp=drive_link)
-2. Write it to the SD card with **balenaEtcher** ([download](https://etcher.balena.io/)): **Flash from file** → the `.img.gz` → **Select target** → **Flash!**
-3. Insert the card and power on. VectorPie boots into the game menu.
+1. Download the image (about 2 GB): ([VectorPie Image](https://drive.google.com/file/d/1MTDPK5mUQjhhaaRrVNwTPDbsvIzAS67E/view?usp=sharing))
+2. Write it to the SSD (connected to your PC with a USB adapter) or to the SD card with **balenaEtcher** ([download](https://etcher.balena.io/)): **Flash from file** → the `.img.gz` → **Select target** → **Flash!**
+3. Install the SSD or insert the SD card, and power on. VectorPie boots into the game menu.
 
-### USB-DVG Firmware
+### Firmware
 
-Two variants:
+Both boards are updated from the menu: **Settings → DVG → UPDATE...** (see [Firmware updates](#firmware-updates)).
+
+**BeamForge** has one firmware for every board.
+
+**USB-DVG** has two variants:
 
 - **Standalone** — any cabinet or custom controls
 - **Arcade Control** — for the adapter card that connects to the original harness of an Asteroids, Asteroids Deluxe, Space Duel, Tempest, or Black Widow cabinet, so its buttons, CRT and coin inputs work natively
@@ -49,21 +67,13 @@ Two variants:
 | v3 or later (standalone) | Standalone |
 | v3 or later (on adapter card) | Arcade Control |
 
-> On VectorPie 1.1.2 or later the firmware is updated from the menu (Settings → DVG → DVG UPDATE...). The manual procedure below is for older versions only.
-
-Flash with **Teensy Loader** ([download](https://www.pjrc.com/teensy/loader.html)):
-
-1. Download the `.hex`: [Standalone 1.14R1](https://drive.google.com/file/d/1goWkwykACHfnLVW0sk0REXXBPuLQ8ldB/view?usp=drive_link) or [Arcade Control 1.14R1](https://drive.google.com/file/d/1tx1JvYTLceOkbxAkWTCNXsJ22BJQq2xp/view?usp=drive_link)
-2. **File → Open HEX File** in Teensy Loader
-3. Press the reset button on the Teensy; it flashes and resets
-
 ---
 
 ## Menu Navigation
 
-Keyboard or arcade controls, as mapped in AdvanceMAME. The hint bar at the bottom scrolls the available controls and the selected game's high scores.
+VectorPie uses the cabinet controls to browse and launch games, skip music tracks and open the settings menu. UI control mappings are shared by MAME and VectorPie, and can be remapped in either the settings menu or MAME (see [Input Mapping](#input-mapping)). A keyboard works too. The hint bar at the bottom of the screen shows the available controls and the selected game's high scores.
 
-> A keyboard may be needed once, to map the arcade controls inside AdvanceMAME.
+> A keyboard may be needed once, to map the arcade controls the first time.
 
 | Action | Description |
 |---|---|
@@ -80,7 +90,7 @@ Keyboard or arcade controls, as mapped in AdvanceMAME. The hint bar at the botto
 
 ## Menu Layout
 
-Games are listed by manufacturer:
+VectorPie lists the games by manufacturer. Revisions of a game (regions, prototypes) are grouped under one entry and picked with Left/Right:
 
 - The **manufacturer header** is the top entry; Left/Right on it switches manufacturer.
 - **Games** are listed below it. A game with several ROM variants shows arrows; Left/Right cycles them.
@@ -90,19 +100,17 @@ Games are listed by manufacturer:
 
 ## Marquee Display
 
-The HDMI output shows the highlighted game's marquee, or the manufacturer's logo on a header. A game without artwork gets a default image. Scaling (Fit, Stretch, Zoom) is set in Settings → DISPLAY.
+VectorPie shows the selected game's marquee on an HDMI screen, or the manufacturer's logo on a header. A game without artwork gets a default image. Scaling (Fit, Stretch, Zoom) is set in Settings → DISPLAY. When a game has a preview video, it plays over the marquee when you land on it.
 
 ---
 
 ## Input Mapping
 
-Controls are mapped **once, in AdvanceMAME**, and used everywhere: the menu, every AdvanceMAME game, and the games built natively for the Pi. To remap, launch any AdvanceMAME game and use its input configuration menu; the change applies on the next launch.
-
-> With a USB-DVG, AdvanceMAME's in-game menus — including input configuration — are mirrored on the vector display, so you can rebind while watching the monitor. Bindings show there in short form (`J:BTN1`, `LCTRL`, `P:1` = keypad 1); HDMI shows the full names.
+VectorPie shares its control mappings with MAME: the menu, every MAME game and the app store games use the same mappings. They can be remapped in the settings menu (see [Rebinding from the menu](#rebinding-from-the-menu)) or in any MAME game's input configuration menu; the change applies on the next launch.
 
 ### Rebinding from the menu
 
-**Settings → CONTROLS → CONFIGURE INPUTS...** rebinds the common controls without a keyboard or a game: UI CONFIG and UI CANCEL first, then the player controls (P1/P2 directions, fire, start, coin, pause), each with its binding.
+**Settings → CONTROLS → CONFIGURE INPUTS...** rebinds the common controls without a keyboard or a game: UI CONFIG, UI CANCEL and UI SELECT first, then the player controls (P1/P2 directions, buttons 1 and 2, start, coin), UI PAUSE and SERVICE, each with its binding.
 
 - Highlight a control, press **Select**, then press the key, button, or stick direction. The binding builds up live (`p` then `6` gives `p or 6`).
 - Press several inputs for "or" alternatives.
@@ -110,33 +118,36 @@ Controls are mapped **once, in AdvanceMAME**, and used everywhere: the menu, eve
 - **Left / Right** resets a control to its default.
 - UI CANCEL always keeps Escape and UI CONFIG always keeps Tab, so you can't lock yourself out.
 
-Nothing is written until **SAVE AND EXIT**; leaving with unsaved changes asks first. The bindings go to the AdvanceMAME configuration, so they apply everywhere.
+Nothing is written until **SAVE AND EXIT**; leaving with unsaved changes asks first. The bindings are shared with MAME, so they apply everywhere.
 
-The menu and the native Pi games read these actions. **Read by** shows who honors each — the menu and Geometry Wars (`opengw`):
+The menu reads these actions:
 
-| AdvanceMAME Action | Menu Function | Default Key | Read by |
-|---|---|---|---|
-| `ui_up` | Up | Up Arrow | menu |
-| `ui_down` | Down | Down Arrow | menu |
-| `ui_left` | Left / previous manufacturer | Left Arrow | menu |
-| `ui_right` | Right / next manufacturer | Right Arrow | menu |
-| `ui_select` | Launch | 1, Enter, or Left Ctrl | menu |
-| `ui_configure` | Settings | Tab | menu |
-| `ui_pause` | (not used by menu) | P | opengw (pause) |
-| `ui_cancel` | Quit / exit | Escape | menu, opengw |
-| `p2_start` | Next track | 2 | menu |
+| MAME Action | Menu Function | Default Key |
+|---|---|---|
+| `ui_up` | Up | Up Arrow |
+| `ui_down` | Down | Down Arrow |
+| `ui_left` | Left / previous manufacturer | Left Arrow |
+| `ui_right` | Right / next manufacturer | Right Arrow |
+| `ui_select` | Launch | 1, Enter, or Left Ctrl |
+| `ui_configure` | Settings | Tab |
+| `service` | Settings (also) | F2 |
+| `ui_cancel` | Quit / exit | Escape |
+| `p2_start` | Next track | 2 |
 
 ### Game Controls
 
-AdvanceMAME maps the connected hardware to each game's control types. **Read by** shows which native Pi games honor each action; AdvanceMAME games read all of them.
+MAME maps the connected hardware to each game's control types:
 
-| Control Type | AdvanceMAME Action | Typical Input | Read by |
-|---|---|---|---|
-| Directional movement | `p1_up/down/left/right` | Joystick, arrows | opengw (move) |
-| Twin-stick aim | `p2_up/down/left/right` | Second joystick, R/F/D/G | opengw (aim) |
-| Fire / action | `p1_button1` | Left Ctrl, mouse button, joystick button | opengw |
-| Player 1 start | `start1` | 1 | opengw |
-| Insert coin | `coin1` | 5 | menu, opengw |
+| Control Type | MAME Action | Typical Input |
+|---|---|---|
+| Directional movement | `p1_up/down/left/right` | Joystick, arrows |
+| Twin-stick aim | `p2_up/down/left/right` | Second joystick, R/F/D/G |
+| Fire / action | `p1_button1` | Left Ctrl, mouse button, joystick button |
+| Player 1 start | `start1` | 1 |
+| Insert coin | `coin1` | 5 |
+| Service menu | `service` | F2 |
+
+The service button opens a game's service menu: the test and settings mode of a MAME game, the settings or controls page of an app store game that has one. In the VectorPie menu it opens Settings.
 
 > A mouse and an analog joystick can both be connected. For analog-stick games (Star Wars, Empire Strikes Back, Lunar Lander, Tail Gunner, Red Baron), **CONTROLS → ADSTICK** picks which drives the control — JOYSTICK or MOUSE. Spinners and trackballs are unaffected.
 
@@ -144,12 +155,19 @@ AdvanceMAME maps the connected hardware to each game's control types. **Read by*
 
 ## LED Lighting
 
-VectorPie drives the control-panel LEDs itself: a game lights the controls it uses, in its own colors, and a voice guide tours them. Boards: **PacLED64**, **NanoLed**, **PacDrive**, **I-PAC Ultimate I/O**, **LED-Wiz 32** — several at once if needed. Setup is done once, on the cabinet.
+VectorPie can control the LEDs of your control panel's buttons and joysticks:
+
+- **Show the controls each game uses.** When you pick a game, only its buttons and joysticks light up, each in that game's own color. The launch button blinks to show what starts the game.
+- **Tell you what each control does.** Hold the launch button and a voice guide tours the panel: each control lights in turn while a voice says what it does (FIRE, THRUST, SHIELD...).
+- **Animate the panel.** Light shows play when the menu starts, when a game launches and while you browse a manufacturer.
+- **Dance to the music.** During the screensaver, the panel animates on the beat of the music.
+
+Supported boards: **PacLED64**, **NanoLed**, **PacDrive** and **I-PAC Ultimate I/O**, several at once if needed. Setup is done once, from the menu on the cabinet (Settings → LEDS).
 
 ### Connecting the board
 
 1. Wire each lamp to the board. An RGB lamp uses three consecutive outputs, n, n+1, n+2. On an Ultimate I/O the connectors from output 49 up are rotated, so their pins run B, G, R; plug the lamp in pin for pin on either side and the menu sorts the colors out. (The PacLED64 is R, G, B throughout.)
-2. Plug the board into a USB 2.0 port (black; the blue ones are for the USB-DVG).
+2. Plug the board into a USB 2.0 port (black; the blue ones are for the vector board).
 3. The board is detected automatically and LED SETUP lists it. No drivers, no service.
 
 ### Configuring each output
@@ -203,6 +221,8 @@ Nothing is written until **SAVE AND EXIT**; leaving with unsaved changes asks fi
 
 ## Wi-Fi Configuration
 
+VectorPie connects to Wi-Fi from the settings menu, without a keyboard. A network connection is needed for the app store and updates, and gives access to the Pi from a PC. A network cable works without any setup.
+
 1. Open Settings and go to **NETWORK** — networks are scanned in the background
 2. Left/Right on **WIFI NETWORK** picks yours
 3. Select on **WIFI PASSWORD** to edit: **Up/Down** cycles the character under the cursor (the last choice, **DEL**, deletes it), **Left/Right** moves along (Right past the end adds a character), **Select** confirms it, **Cancel** saves
@@ -213,6 +233,8 @@ Connection status and IP address are shown at the top of the section.
 ---
 
 ## Background Music
+
+VectorPie plays music while you browse the games: a looping theme, or your own playlist with DJ breaks between tracks. The music pauses during a game and resumes after it. With beat maps, the LED light show and the screensaver apps follow the beat.
 
 **Settings → MUSIC → TYPE** picks the mode:
 
@@ -251,41 +273,63 @@ The drive can carry a `vectorpie_backup.tar.gz` too. The row reports `ADDED 23/4
 
 ## Idle Dimming & Screensaver
 
+VectorPie dims the menu when the controls are idle, then starts a screensaver after 60 seconds to protect the tube. The music and the light show keep playing. Any control returns to the menu.
+
 | Timeout | Behavior |
 |---|---|
 | Stop pressing keys | Menu text fades over the MENU FADE time (default 2.5 s); the marquee brightens; hints disappear |
 | 60 seconds idle | Screensaver: a short attract video, then the screensaver video loops |
 
-The HDMI screensaver shows the current and next track titles, and that Player 2 Start skips. The USB-DVG shows drifting asteroids and a bouncing VectorPie logo. With an LED panel, the SCREENSAVER light show plays (see [Light shows](#light-shows)). Any control other than Player 2 Start returns to the menu.
+The HDMI screensaver shows the current and next track titles, and that Player 2 Start skips. The vector board (BeamForge or USB-DVG) shows drifting asteroids and a bouncing VectorPie logo. With an LED panel, the SCREENSAVER light show plays (see [Light shows](#light-shows)). Any control other than Player 2 Start returns to the menu.
+
+### Screensaver apps
+
+Screensaver apps replace the built-in screensaver on the vector monitor. They react to the music: Spectrum shows it as a spectrum analyzer that bumps on every beat, Pulse as a star of the spectrum with rings on every beat, VU Meters on two analog meters, left and right. The music, DJ breaks and light show go on as usual, and HDMI shows the app's marquee.
+
+- **Settings → SCREENSAVERS → INSTALL...** installs them, online from the app store or from a USB drive, like games (see [Game Packages](#game-packages)). **REMOVE...** removes one.
+- **SCREENSAVERS → SELECT** picks the screensaver: **VECTORPIE** (the built-in one), an installed app, or **RANDOM** (a different one each time).
 
 ---
 
 ## Settings Menu
 
-**Tab** opens Settings; Tab or **Escape** closes it. Up/Down moves, Left/Right adjusts, Select toggles or opens. With a USB-DVG, Settings is mirrored on the vector display.
+VectorPie is configured from its settings menu, with the cabinet controls: games and screensavers, backups, updates, the vector board, controls, audio, display, music, LEDs and network. **Tab** opens Settings; Tab or **Escape** closes it. Up/Down moves, Left/Right adjusts, Select toggles or opens. With a vector board (BeamForge or USB-DVG), Settings is mirrored on the vector display.
 
-Sections: DISPLAY, DVG, AUDIO, MUSIC, EFFECTS, CONTROLS, LEDS, GAMES, BACKUP, NETWORK, SYSTEM.
+Sections: GAMES, SCREENSAVERS, BACKUP, SYSTEM, DVG, CONTROLS, AUDIO, DISPLAY, MUSIC, EFFECTS, LEDS, NETWORK.
 
 | Section | Setting | Description |
 |---|---|---|
+| GAMES    | INSTALL GAMES... | Install or update game packages, from a USB drive, the network or online. See [Game Packages](#game-packages). |
+| GAMES    | REMOVE GAME... | Remove an installed game, keeping its high scores or not. |
+| SCREENSAVERS | INSTALL...  | Install or update screensaver apps. See [Screensaver apps](#screensaver-apps). |
+| SCREENSAVERS | REMOVE...   | Remove an installed screensaver app. |
+| SCREENSAVERS | SELECT      | The screensaver: VECTORPIE (built-in), an installed app, or RANDOM. |
+| BACKUP   | SAVE ⏏         | Save settings to a USB drive. See [Backup Save / Restore](#backup-save--restore). |
+| BACKUP   | RESTORE ⏏      | Restore them from the drive. |
+| SYSTEM   | VECTORPIE UPDATE... | The update page: checks online, shows the release notes, UPDATE applies. See [Software Updates](#software-updates). |
+| SYSTEM   | EXIT TO SHELL  | Leave the menu for a Linux prompt |
+| DVG      | DVG            | Vector board output on/off |
+| DVG      | HARDWARE       | The connected board: BEAMFORGE or USB-DVG. OTHER is an unrecognized board: it gets no firmware updates. |
+| DVG      | DVG REFRESH    | Refresh rate, 30–60 Hz. Default 40. Applies as you adjust — raise for a steadier, brighter picture, lower if the display can't keep up. |
+| DVG      | FIRMWARE VARIANT | USB-DVG only: firmware variant on the board, STANDARD or ARCADE CONTROL (BeamForge has none). Used by UPDATE... (below). Newer firmware reports it and this follows. |
+| DVG      | UPDATE...      | The firmware update page (for the FIRMWARE VARIANT): checks online, shows the release notes, UPDATE flashes. |
+| DVG      | SETTINGS...    | The board's own settings menu on the vector display: Up/Down/Left/Right navigate, Select confirms, Cancel goes back (at the top level, closes and saves), Config closes and saves from anywhere. Closes by itself after 30 s without a press. |
+| DVG      | CRT CALIBRATION | Alignment patterns on the vector display: Left/Right cycles them, Cancel exits. |
+| DVG      | OVERLAY        | Color overlays: DISABLED / COLORING / ARTWORK / BOTH (see below) |
+| DVG      | AUTOSTART GAME | Launch the board's default game at startup |
+| CONTROLS | ZERO DEADZONE  | Removes the joystick deadzone at the kernel level. Needed by some analog controllers (Alan-1 Star Wars yoke). |
+| CONTROLS | ADSTICK        | Which device drives analog-stick games: JOYSTICK or MOUSE. |
+| CONTROLS | CALIBRATE      | Left/Right picks the joystick, Select opens its calibration page. Move all axes to their extremes, let go, press Select — the resting position becomes center. Reapplied at every startup. Grayed with no joystick. |
+| CONTROLS | CONFIGURE INPUTS... | Rebind the MAME controls from the menu. See [Rebinding from the menu](#rebinding-from-the-menu). |
+| AUDIO    | OUTPUT         | The audio device in use: `USB`, `HEADPHONE`, `SOUND HAT`, or `DEFAULT` |
+| AUDIO    | MASTER VOLUME  | System volume |
+| AUDIO    | MAME SOUND QUALITY | MAME audio: **HIGH** (48 kHz), **MEDIUM** (22 kHz, smoother on demanding games), **LOW** (11 kHz, maximum performance; speech games sound muffled) |
 | DISPLAY  | MARQUEE        | Marquee scaling: FIT / STRETCH / ZOOM / FIT WIDTH / FIT HEIGHT |
-| DISPLAY  | MENU ON HDMI   | With a USB-DVG, also show the game menu on HDMI. Off: HDMI shows only the marquee (and hint bar). |
+| DISPLAY  | MENU ON HDMI   | With a vector board (BeamForge or USB-DVG), also show the game menu on HDMI. Off: HDMI shows only the marquee (and hint bar). |
 | DISPLAY  | SHOW GAME PREVIEW | Play a game's preview video (`/usr/local/share/advance/video/<rom>.mp4`) over the marquee when you land on it. Default on. |
 | DISPLAY  | MENU FADE      | Fade-out time for the menu text: 1.0–15.0 s. Default 2.5 s. |
 | DISPLAY  | HINTS          | Control hints in the hint bar |
 | DISPLAY  | HIGH SCORES    | High scores in the hint bar |
-| DVG      | DVG            | Vector board output on/off |
-| DVG      | HARDWARE       | The connected board, e.g. USB-DVG. OTHER is an unrecognized board: it gets no firmware updates. |
-| DVG      | DVG REFRESH    | Refresh rate, 30–60 Hz. Default 40. Applies as you adjust — raise for a steadier, brighter picture, lower if the display can't keep up. |
-| DVG      | FIRMWARE VARIANT | Firmware variant on the board: STANDARD or ARCADE CONTROL. Used by DVG UPDATE. Newer firmware reports it and this follows. |
-| DVG      | DVG UPDATE...  | The firmware update page (for the FIRMWARE VARIANT): checks online, shows the release notes, UPDATE flashes. |
-| DVG      | DVG SETTINGS   | The board's own settings menu on the vector display: Up/Down/Left/Right navigate, Select confirms, Cancel goes back (at the top level, closes and saves), Config closes and saves from anywhere. Closes by itself after 30 s without a press. Needs firmware 1.14R2 or later. |
-| DVG      | CRT CALIBRATION | Alignment patterns on the vector display: Left/Right cycles them, Cancel exits. |
-| DVG      | OVERLAY        | Color overlays: DISABLED / COLORING / ARTWORK / BOTH (see below) |
-| DVG      | AUTOSTART GAME | Launch the board's default game at startup |
-| AUDIO    | OUTPUT         | The audio device in use: `USB`, `HEADPHONE`, `SOUND HAT`, or `DEFAULT` |
-| AUDIO    | MASTER VOLUME  | System volume |
-| AUDIO    | MAME SOUND QUALITY | AdvanceMAME audio: **HIGH** (48 kHz), **MEDIUM** (22 kHz, smoother on demanding games), **LOW** (11 kHz, maximum performance; speech games sound muffled) |
 | MUSIC    | VOLUME         | Music volume |
 | MUSIC    | TYPE           | **THEME** or **PLAYLIST** |
 | MUSIC    | THEME          | The looping theme track; previews as you cycle. Grayed with PLAYLIST. |
@@ -294,18 +338,10 @@ Sections: DISPLAY, DVG, AUDIO, MUSIC, EFFECTS, CONTROLS, LEDS, GAMES, BACKUP, NE
 | MUSIC    | GENERATE BEAT MAPS... | Make the beat maps the screensaver light show follows. Cancel stops and keeps what's done. See [Beat maps](#beat-maps). |
 | EFFECTS  | ENABLED        | Navigation and select sounds |
 | EFFECTS  | VOLUME         | Their volume |
-| CONTROLS | ZERO DEADZONE  | Removes the joystick deadzone at the kernel level. Needed by some analog controllers (Alan-1 Star Wars yoke). |
-| CONTROLS | ADSTICK        | Which device drives analog-stick games: JOYSTICK or MOUSE. |
-| CONTROLS | CALIBRATE      | Left/Right picks the joystick, Select opens its calibration page. Move all axes to their extremes, let go, press Select — the resting position becomes center. Reapplied at every startup. Grayed with no joystick. |
-| CONTROLS | CONFIGURE INPUTS... | Rebind the AdvanceMAME controls from the menu. See [Rebinding from the menu](#rebinding-from-the-menu). |
 | LEDS     | LED SETUP      | Wire the LED panel. See [LED Lighting](#led-lighting). |
 | LEDS     | CABINET COLORS | Colors for the coin, start and menu lamps. See [Cabinet colors](#cabinet-colors). |
 | LEDS     | GAME COLORS    | Recolor a game's controls. See [Game colors](#game-colors). |
 | LEDS     | LED SHOW...    | Light shows for the screensaver, startup, game launch and manufacturers. See [Light shows](#light-shows). |
-| GAMES    | INSTALL GAMES... | Install or update game packages. See [Game Packages](#game-packages). |
-| GAMES    | REMOVE GAME... | Remove an installed game, keeping its high scores or not. |
-| BACKUP   | SAVE ⏏         | Save settings to a USB drive. See [Backup Save / Restore](#backup-save--restore). |
-| BACKUP   | RESTORE ⏏      | Restore them from the drive. |
 | NETWORK  | ETHERNET       | Wired interface on/off. Off forces Wi-Fi even with a cable in. |
 | NETWORK  | WIFI           | Wi-Fi radio on/off. |
 | NETWORK  | HOSTNAME       | The Pi's name on the network, edited like the Wi-Fi password (lowercase, digits, hyphens). Applies live, including the `.local` name. |
@@ -314,8 +350,6 @@ Sections: DISPLAY, DVG, AUDIO, MUSIC, EFFECTS, CONTROLS, LEDS, GAMES, BACKUP, NE
 | NETWORK  | WIFI NETWORK   | Pick a network from the scan. |
 | NETWORK  | WIFI PASSWORD  | Its password. See [Wi-Fi Configuration](#wi-fi-configuration). |
 | NETWORK  | CONNECT        | Connect. Grayed when already on that network. |
-| SYSTEM   | VECTORPIE UPDATE... | The update page: checks online, shows the release notes, UPDATE applies. See [Software Updates](#software-updates). |
-| SYSTEM   | EXIT TO SHELL  | Leave the menu for a Linux prompt |
 
 Changes are saved when Settings closes.
 
@@ -323,7 +357,7 @@ Changes are saved when Settings closes.
 
 ## Backup Save / Restore
 
-Reflashing the SD card loses your settings. Save them to a USB drive first, then restore on the new image.
+VectorPie saves its settings to a USB drive and restores them: controls, settings, game list, LED panel, high scores, Wi-Fi and more. Reflashing the SSD or SD card loses your settings: save them first, then restore them on the new image.
 
 ### What is backed up
 
@@ -332,7 +366,7 @@ Reflashing the SD card loses your settings. Save them to a USB drive first, then
 - **gamelist.ini** — your game list
 - **LED settings** — panel wiring, cabinet colors, game colors, light shows
 - **Theme tracks** you've added
-- **High scores** — `.hi` and NVRAM files, Geometry Wars saves, and those of installed game packages
+- **High scores** — `.hi` and NVRAM files, and those of installed game packages
 - **Wi-Fi connections**
 - **Hostname** — reapplied live, so the `.local` and share names carry over
 - **SSH host keys** — so SSH clients don't complain after reflashing
@@ -364,19 +398,19 @@ Any mounted USB drive works. The row reports the result.
 
 ## Software Updates
 
-VectorPie updates itself over the internet — no reflashing.
+VectorPie updates itself over the internet from the settings menu, without reflashing. It shows the release notes first and keeps your settings. If the new version fails to boot, the Pi returns to the previous one. The vector board's firmware is updated the same way.
 
 ### How to update
 
 1. Connect to a network (see [Wi-Fi Configuration](#wi-fi-configuration))
-2. **SYSTEM → VECTORPIE UPDATE...** opens the update page, which checks online: **CHECKING**, then **UP TO DATE (*version*)**, **UPDATE AVAILABLE: *version***, or **OFFLINE**, with the latest version's release notes in a box below it (Up/Down scroll, Left/Right a page)
+2. **SYSTEM → VECTORPIE UPDATE...** opens the update page, which checks online: **CHECKING**, then **UP TO DATE (*version*)**, **UPDATE AVAILABLE: *version***, or **OFFLINE**, with the latest version's release notes in a box below it (Up/Down scroll, Left/Right a page). The cursor lands on **UPDATE** when there is one, else on **EXIT**
 3. **UPDATE** applies (grayed when you already run that version): **DOWNLOADING → VERIFYING → APPLYING**, then the Pi reboots into the new version. **EXIT** or CANCEL returns to Settings
 
 An update takes 10–15 minutes. Power loss during it is safe — the previous version stays until the new one boots — but let it finish.
 
-### USB-DVG firmware updates
+### Firmware updates
 
-**DVG → DVG UPDATE...** works the same way for the board's firmware (for the FIRMWARE VARIANT): the page checks, shows the release notes, and UPDATE downloads, verifies and flashes — the vector display goes dark during the flash — then reboot. Only newer firmware is offered, except that changing FIRMWARE VARIANT offers the other variant at the same version, so a board flashed with the wrong one can be corrected. A failed flash is recoverable: the Teensy bootloader is separate, so try again.
+**DVG → UPDATE...** works the same way for the board's firmware, BeamForge or USB-DVG (on a USB-DVG, for its FIRMWARE VARIANT): the page checks, shows the release notes, and UPDATE downloads, verifies and flashes. The page stays up through **DOWNLOADING → VERIFYING → FLASHING** (EXIT and Cancel wait until it is done); the vector display goes dark during the flash, then the Pi reboots. A failure shows on the page. Only newer firmware is offered, except that on a USB-DVG changing FIRMWARE VARIANT offers the other variant at the same version, so a board flashed with the wrong one can be corrected. A failed flash is recoverable: the board's bootloader is separate, so try again.
 
 ### What carries over
 
@@ -392,15 +426,17 @@ VectorPie keeps two copies of itself. If the new one fails to boot, the Pi rever
 
 ---
 
-## USB-DVG Support
+## BeamForge and USB-DVG Support
 
-The USB-DVG renders the menu as vector text on a real vector monitor, with manufacturer logos and an asteroids screensaver, alongside the marquee on HDMI. It is detected automatically and can be turned off in Settings. It can also name a default game to launch at startup.
+VectorPie drives a real vector monitor through a BeamForge or USB-DVG board: the menu, the MAME games and the app store games. VectorPie allows the user to update and configure the board from the settings menu. No need to push buttons on a board. The board renders the menu as vector text on a real vector monitor, with manufacturer logos and an asteroids screensaver, alongside the marquee on HDMI. It is detected automatically and can be turned off in Settings. It can also name a default game to launch at startup.
 
-> Firmware 1.14R0 or later is required.
+BeamForge is the next-generation board: about 20 million points a second against the USB-DVG's 3 million. Games draw more on it, at higher frame rates.
 
-### Connecting the USB-DVG
+> USB-DVG: firmware 1.14R0 or later is required.
 
-Plug it into a **USB 3.0 port** (blue). Leave the other USB 3.0 port empty. On a **Pi 5**, a USB audio device goes in a USB 2.0 port (black). Joysticks, keyboards, mice and encoders go in the remaining USB 2.0 port, through a hub if needed.
+### Connecting the board
+
+Plug the BeamForge or USB-DVG into a **USB 3.0 port** (blue). Leave the other USB 3.0 port empty. On a **Pi 5**, a USB audio device goes in a USB 2.0 port (black). Joysticks, keyboards, mice and encoders go in the remaining USB 2.0 port, through a hub if needed.
 
 ### Color Overlays
 
@@ -443,42 +479,41 @@ Games with native color (Tempest, Major Havoc, Star Wars, Gravitar, Black Widow,
 
 ## Game Packages
 
-Games made with the VectorPie SDK come as packages: one `.vpk` file per game.
+VectorPie installs app store games, online from the VectorPie app store, from a USB drive or over the network. Installed games show in the menu like the others, with their marquee, high scores, LED colors and voice control guide. The app store also offers their updates.
 
-**Settings → GAMES → INSTALL GAMES...** installs them:
+Screensaver apps install the same way (see [Screensaver apps](#screensaver-apps)).
 
-1. If a USB drive is plugged in, its `.vpk` files (in its `games/` folder or top folder) are copied to `/persistent/games/packages/`. The drive can be pulled out right after.
-2. Packages of games already installed at the same or a newer version are deleted from that folder. The page offers the rest: new games, and updates of installed ones.
-3. **GAME** picks the game with Left/Right. Under it are its manufacturer, author, description, the installed version and the package's version. On HDMI, the game's marquee shows beside them.
-4. Select asks **INSTALL** (or **UPDATE**) with the game's name. **YES** installs it. An update keeps the game's high scores. The `.vpk` is deleted once installed.
+**Settings → GAMES → INSTALL...** installs them:
 
-You can also copy `.vpk` files to `/persistent/games/packages/` yourself (network share or scp), no USB drive needed.
+1. With a network connection, the page lists the games available online in the app store (see [vectorpie-games](https://github.com/Goldfinch2/vectorpie-games)). Games on a plugged-in USB drive (in its `games/` folder or top folder) are listed too; the drive can be pulled out right after.
+2. The page offers new games and updates of installed ones. **GAME** picks the game with Left/Right. Under it are its manufacturer, author, description, the installed version and the new version (for an online game, **ONLINE** and its download size). On HDMI, the game's marquee shows beside them. Long values scroll on the vector monitor.
+3. Select asks **INSTALL** (or **UPDATE**) with the game's name. **YES** installs it; an online game is downloaded first, its progress shown, and checked before it is installed. An update keeps the game's high scores.
 
 An installed game shows in the menu under its manufacturer, with its marquee and high scores, and launches like any other game. While it plays on the vector monitor, HDMI shows its marquee.
 
 An installed game lights its controls in its own colors, and holding select on it in the menu plays its voice control guide, like any other game (see [LED Lighting](#led-lighting)).
 
-**Settings → GAMES → REMOVE GAME...** removes one: **GAME** picks it with Left/Right (its details and marquee show the same way), Select asks **REMOVE** with its name, and **YES** removes the game and its high scores.
+**Settings → GAMES → REMOVE...** removes one: **GAME** picks it with Left/Right (its details and marquee show the same way), Select asks **REMOVE** with its name, and **YES** removes the game and its high scores.
 
-Installed games live in `/persistent/games`, which updates don't touch. A USB backup also saves their high scores.
+Software updates keep the installed games. A USB backup also saves their high scores.
 
 ---
 
 ## High Scores
 
-The hint bar shows the selected game's high scores, read from its MAME `.hi` and `.nv` save files (or a game package's own high-score file): the label in gold, ranks and scores in cyan, names in white, alternating with the control hints in gray. Both can be turned off in Settings → DISPLAY.
+VectorPie shows the selected game's high scores in the hint bar, read from its MAME `.hi` and `.nv` save files (or a game package's own high-score file): the label in gold, ranks and scores in cyan, names in white, alternating with the control hints in gray. Both can be turned off in Settings → DISPLAY.
 
 ---
 
 ## Launching Games
 
-Select fades the music, hands over the display, and launches the game. When it exits the menu resumes, and a playlist track picks up where it was. Mappings or settings changed inside AdvanceMAME apply at once.
+VectorPie launches the selected game with one press and returns to the menu when it exits. Select fades the music, hands over the display, and launches the game. When it exits the menu resumes, and a playlist track picks up where it was. Mappings or settings changed inside MAME apply at once.
 
 ---
 
 ## Troubleshooting
 
-**Don't read or write the SD card from a PC or Mac**
+**Don't read or write the SSD or SD card from a PC or Mac**
 
 Even if the computer can mount the Pi's Linux partitions, don't. Files written with the wrong ownership can break the menu or game launches. Use the supported paths instead:
 
@@ -490,7 +525,7 @@ Even if the computer can mount the Pi's Linux partitions, don't. Files written w
 
 **DVG, OVERLAY, AUTOSTART GAME and MENU ON HDMI are grayed out**
 
-The USB-DVG isn't detected. Check its USB connection.
+The vector board (BeamForge or USB-DVG) isn't detected. Check its USB connection.
 
 ---
 
@@ -502,7 +537,7 @@ Analog-stick games use the joystick by default. Set **CONTROLS → ADSTICK** to 
 
 **The Pi sometimes shows the Network Install screen instead of booting**
 
-On Raspberry Pi OS Trixie Lite the red/white Network Install screen can appear at power-on even with a valid SD card. Disable it in the EEPROM:
+On Raspberry Pi OS Trixie Lite the red/white Network Install screen can appear at power-on even with a valid SSD or SD card. Disable it in the EEPROM:
 
 ```
 sudo rpi-eeprom-config --edit
@@ -551,7 +586,7 @@ MANUFACTURER|DISPLAY NAME|PARENT ROM|CLONE ROM[|COMMAND]
 |---|---|
 | MANUFACTURER | Groups games (`Atari`, `Sega`) |
 | DISPLAY NAME | Shown in the menu |
-| PARENT ROM | AdvanceMAME parent ROM |
+| PARENT ROM | MAME parent ROM |
 | CLONE ROM | The variant to launch |
 | COMMAND | Optional custom launcher for non-emulated games |
 
@@ -571,6 +606,7 @@ Games sharing a parent ROM are variants, cycled with Left/Right. The menu sorts 
 | Samples | `/usr/local/share/advance/sample` |
 | Marquees | `/usr/local/share/advance/artwork/marquees` |
 | Game preview videos | `/usr/local/share/advance/video` |
+| Games to install (copied over the network) | `/persistent/games/packages` |
 
 Artwork is PNG, named after the clone ROM (`asteroid.png`, case-insensitive), then the parent ROM, then `default.png`. Manufacturer logos are `mfg_<name>.png` (lowercase, underscores for spaces) in the marquees directory.
 

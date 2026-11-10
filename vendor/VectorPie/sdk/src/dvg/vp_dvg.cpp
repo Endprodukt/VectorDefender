@@ -13,6 +13,7 @@
 #include "vp_window.h"
 #include "../core/vp_internal.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -20,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Wire protocol: 4-byte big-endian words, (FLAG << 29) | payload
@@ -65,6 +67,9 @@ struct vp_dvg {
     uint32_t      vecCnt;
 
     int32_t       clipL, clipB, clipR, clipT;
+
+    // The whole picture shrunk about the middle and moved (vp_dvg_set_view).
+    float         viewScale, viewX, viewY;
 
     // The drawing state the game sees.
     int32_t       penX, penY;
@@ -331,6 +336,7 @@ static vp_dvg *allocHandle()
     d->clipR = VP_DVG_COORD_MAX; d->clipT = VP_DVG_COORD_MAX;
     d->penR = d->penG = d->penB = 255;
     d->lastR = d->lastG = d->lastB = -1;
+    d->viewScale = 1.0f;
     return d;
 }
 
@@ -371,7 +377,7 @@ int vp_dvg_open_ex(const vp_dvg_options *o, vp_dvg **out)
             h = o->vertical ? 1024 : 768;
         }
         const char *title = (o->window_title && *o->window_title) ? o->window_title : "VectorPie";
-        int r = vp_window_open(title, w, h, o->fullscreen, o->show_blanks, &d->window);
+        int r = vp_window_open(title, w, h, o->fullscreen, o->maximized, o->show_blanks, &d->window);
         if (r != VP_OK) { freeHandle(d); return r; }
         d->hardware = VP_HW_WINDOW;
     }
@@ -470,6 +476,13 @@ void vp_dvg_reset_clip(vp_dvg *d)
     d->clipR = VP_DVG_COORD_MAX; d->clipT = VP_DVG_COORD_MAX;
 }
 
+void vp_dvg_set_view(vp_dvg *d, float scale, float dx, float dy)
+{
+    d->viewScale = scale > 0 ? scale : 1.0f;
+    d->viewX = dx;
+    d->viewY = dy;
+}
+
 void vp_dvg_begin_frame(vp_dvg *d)
 {
     d->vecCnt = 0;
@@ -514,6 +527,15 @@ void vp_lineto(vp_dvg *d, int x, int y)
         d->stats.dropped++;
         return;
     }
+    if (d->viewScale != 1.0f || d->viewX != 0 || d->viewY != 0) {
+        const float mid = VP_DVG_COORD_MAX / 2.0f, s = d->viewScale;
+        auto place = [&](int32_t &c, float by) {
+            long p = lroundf(mid + ((float)c - mid) * s + by);
+            c = (int32_t)(p < 0 ? 0 : p > VP_DVG_COORD_MAX ? VP_DVG_COORD_MAX : p);
+        };
+        place(x0, d->viewX); place(y0, d->viewY);
+        place(x1, d->viewX); place(y1, d->viewY);
+    }
     vp_vec &v = d->vecs[d->vecCnt++];
     v.x0 = x0; v.y0 = y0; v.x1 = x1; v.y1 = y1;
     v.r = d->penR; v.g = d->penG; v.b = d->penB;
@@ -530,7 +552,12 @@ int vp_dvg_end_frame(vp_dvg *d, int monochrome)
     int32_t bx = d->beamX, by = d->beamY;
     for (uint32_t i = 0; i < d->vecCnt; i++) {
         const vp_vec &v = d->vecs[i];
-        if (bx != v.x0 || by != v.y0) {
+        // The first line of a frame always starts with a dark move, even when
+        // the last frame ended there: the board draws its own rectangle after
+        // each frame (against the spot killer), so the beam is never where
+        // the frame left it — a lit first point would be a line across the
+        // screen.
+        if (i == 0 || bx != v.x0 || by != v.y0) {
             cmdAddPoint(d, v.x0, v.y0, 0, 0, 0);
             blanks++;
             blankLen += segLength(bx, by, v.x0, v.y0);
@@ -574,4 +601,100 @@ int vp_dvg_end_frame(vp_dvg *d, int monochrome)
 void vp_dvg_get_stats(const vp_dvg *d, vp_dvg_stats *stats)
 {
     *stats = d->stats;
+}
+
+// ---------------------------------------------------------------------------
+// Saving a frame as a picture
+// ---------------------------------------------------------------------------
+
+namespace {
+
+uint32_t crc32Of(const uint8_t *p, size_t n, uint32_t crc = 0)
+{
+    static uint32_t table[256];
+    static bool ready = false;
+    if (!ready) {
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            table[i] = c;
+        }
+        ready = true;
+    }
+    crc = ~crc;
+    for (size_t i = 0; i < n; i++) crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
+    return ~crc;
+}
+
+void be32(std::vector<uint8_t> &o, uint32_t v)
+{
+    o.push_back((uint8_t)(v >> 24)); o.push_back((uint8_t)(v >> 16));
+    o.push_back((uint8_t)(v >> 8));  o.push_back((uint8_t)v);
+}
+
+void pngChunk(std::vector<uint8_t> &o, const char *type, const std::vector<uint8_t> &data)
+{
+    be32(o, (uint32_t)data.size());
+    size_t start = o.size();
+    o.insert(o.end(), type, type + 4);
+    o.insert(o.end(), data.begin(), data.end());
+    be32(o, crc32Of(&o[start], o.size() - start));
+}
+
+}  // namespace
+
+int vp_dvg_save_png(const vp_dvg *d, const char *path, int width, int height)
+{
+    if (!d || !path || width <= 0 || height <= 0) return vp_fail(VP_ERR_INVALID, "vp_dvg_save_png: bad argument");
+    // The last frame's lines, the board square stretched to width x height
+    // (4:3 for a horizontal monitor), on black.
+    std::vector<uint8_t> rgb((size_t)width * height * 3, 0);
+    auto plot = [&](int x, int y, const vp_vec &v) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        uint8_t *p = &rgb[((size_t)y * width + x) * 3];
+        p[0] = v.r; p[1] = v.g; p[2] = v.b;
+    };
+    const float sx = (float)width / (VP_DVG_COORD_MAX + 1), sy = (float)height / (VP_DVG_COORD_MAX + 1);
+    for (uint32_t i = 0; i < d->vecCnt; i++) {
+        const vp_vec &v = d->vecs[i];
+        float x0 = v.x0 * sx, y0 = (VP_DVG_COORD_MAX - v.y0) * sy;
+        float x1 = v.x1 * sx, y1 = (VP_DVG_COORD_MAX - v.y1) * sy;
+        int steps = (int)std::max(std::fabs(x1 - x0), std::fabs(y1 - y0)) + 1;
+        for (int k = 0; k <= steps; k++) {
+            float t = (float)k / steps;
+            plot((int)(x0 + (x1 - x0) * t), (int)(y0 + (y1 - y0) * t), v);
+        }
+    }
+    // PNG: the rows (filter 0) in stored (uncompressed) deflate blocks.
+    std::vector<uint8_t> raw;
+    raw.reserve((size_t)height * (width * 3 + 1));
+    for (int y = 0; y < height; y++) {
+        raw.push_back(0);
+        raw.insert(raw.end(), rgb.begin() + (size_t)y * width * 3, rgb.begin() + (size_t)(y + 1) * width * 3);
+    }
+    std::vector<uint8_t> z = { 0x78, 0x01 };
+    uint32_t a = 1, b = 0;
+    for (uint8_t c : raw) { a = (a + c) % 65521; b = (b + a) % 65521; }
+    for (size_t pos = 0; pos < raw.size() || pos == 0;) {
+        size_t n = std::min<size_t>(65535, raw.size() - pos);
+        z.push_back(pos + n >= raw.size() ? 1 : 0);
+        z.push_back((uint8_t)n); z.push_back((uint8_t)(n >> 8));
+        z.push_back((uint8_t)~n); z.push_back((uint8_t)(~n >> 8));
+        z.insert(z.end(), raw.begin() + pos, raw.begin() + pos + n);
+        pos += n;
+        if (n == 0) break;
+    }
+    be32(z, b << 16 | a);
+    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+    std::vector<uint8_t> ihdr;
+    be32(ihdr, (uint32_t)width); be32(ihdr, (uint32_t)height);
+    ihdr.insert(ihdr.end(), { 8, 2, 0, 0, 0 });              // 8-bit RGB
+    pngChunk(png, "IHDR", ihdr);
+    pngChunk(png, "IDAT", z);
+    pngChunk(png, "IEND", {});
+    FILE *f = fopen(path, "wb");
+    if (!f) return vp_fail(VP_ERR_IO, "cannot write %s", path);
+    size_t ok = fwrite(png.data(), 1, png.size(), f);
+    fclose(f);
+    return ok == png.size() ? VP_OK : vp_fail(VP_ERR_IO, "cannot write %s", path);
 }
